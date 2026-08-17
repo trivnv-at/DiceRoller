@@ -13,6 +13,9 @@
      limitations under the License.
 -->
 <resources>
-    <string name="app_name">Dice Roller</string>
-    <string name="roll">Roll</string>
+    <string name="app_name">Ular Tangga</string>
+    <string name="turn_start">Giliran Pemain 1 (Merah). Lempar dadu!</string>
+    <string name="dice">Dadu</string>
+    <string name="roll_snakes">Lempar Dadu</string>
+    <string name="play_again">Main Lagi</string>
 </resources>
