@@ -58,8 +58,8 @@ class MainActivity : AppCompatActivity() {
     // True selama ada HTTP in-flight, cegah overlap poll/roll.
     private var networkingActive = false
 
-    // Polling tiap 1.5s untuk sinkron gerakan Player 2.
-    private val pollDelayMs = 1500L
+    // Polling tiap 0.5s untuk sinkron gerakan Player 2.
+    private val pollDelayMs = 500L
     private var polling = false
     private val handler = Handler(Looper.getMainLooper())
     private val pollTick = object : Runnable {
@@ -227,7 +227,7 @@ class MainActivity : AppCompatActivity() {
                     // Overshoot / tanpa gerakan — render langsung.
                     applyServerState(view)
                 }
-            }, 500L)
+            }, 800L)
         }
     }
 
