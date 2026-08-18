@@ -27,6 +27,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -347,7 +348,7 @@ class UlarTanggaView @JvmOverloads constructor(
             } else {
                 tokenCenterForSquare(positions[p], p, sq, ox, oy, r)
             }
-            val ty = cy + bounceOffset(p, sq)
+            val ty = cy + bounceOffset(p, sq) + hopOffset(p, sq)
             canvas.drawCircle(cx, ty, r, paint)
             canvas.drawCircle(cx, ty, r, tokenOutline)
             if (p == currentPlayer) {
@@ -425,5 +426,16 @@ class UlarTanggaView @JvmOverloads constructor(
         val height = sq * 0.6f
         val bounces = 2f
         return -height * sin(bounceProgress * PI * 2.0 * bounces).toFloat() * (1f - bounceProgress)
+    }
+
+    /**
+     * Vertical "hop" offset selama token berjalan (MOVE): satu siklus naik-turun
+     * per kotak yang dilewati, sehingga token tampak memantul antar kotak.
+     */
+    private fun hopOffset(p: Int, sq: Float): Float {
+        if (p != animPlayer || animKind != AnimKind.MOVE) return 0f
+        val steps = abs(animTo - animFrom).coerceAtLeast(1)
+        val height = sq * 0.5f
+        return -height * sin(animProgress * PI * steps).toFloat()
     }
 }

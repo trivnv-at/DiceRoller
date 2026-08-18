@@ -200,18 +200,35 @@ class MainActivity : AppCompatActivity() {
         if (key == lastAnimatedRoll) return
         lastAnimatedRoll = key
 
-        if (lr.to != lr.from) {
-            animateToken(
-                player = lr.seat,
-                from = lr.from,
-                to = lr.to,
-                rideTo = lr.rideTo,
-            ) { applyServerState(view) }
-        } else {
-            // Overshoot / tanpa gerakan — render langsung.
+        // Dadu dulu, lalu token bergerak setelah dadu berhenti + 0,5s.
+        applyDelayedMove(view, lr)
+    }
+
+    /**
+     * Render hasil roll: tampilkan dadu (600ms), lalu gerakkan token SETELAH
+     * dadu berhenti + 500ms — sinkron dgn web. Dipakai untuk roll sendiri &
+     * gerakan pemain remote.
+     */
+    private fun applyDelayedMove(view: GameApi.GameView, lr: GameApi.LastRoll?) {
+        if (lr == null) {
             applyServerState(view)
+            return
         }
-        showDice(lr.value)
+        showDice(lr.value) {
+            handler.postDelayed({
+                if (lr.to != lr.from) {
+                    animateToken(
+                        player = lr.seat,
+                        from = lr.from,
+                        to = lr.to,
+                        rideTo = lr.rideTo,
+                    ) { applyServerState(view) }
+                } else {
+                    // Overshoot / tanpa gerakan — render langsung.
+                    applyServerState(view)
+                }
+            }, 500L)
+        }
     }
 
     /** Kirim roll ke server, lalu animasikan hasilnya. */
@@ -226,18 +243,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     val lr = view.lastRoll
                     lastAnimatedRoll = if (lr != null) "${lr.seat}:${lr.from}:${lr.to}" else null
-                    if (lr != null) showDice(lr.value)
-
-                    if (lr != null && lr.to != lr.from) {
-                        animateToken(
-                            player = lr.seat,
-                            from = lr.from,
-                            to = lr.to,
-                            rideTo = lr.rideTo,
-                        ) { applyServerState(view) }
-                    } else {
-                        applyServerState(view)
-                    }
+                    applyDelayedMove(view, lr)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -304,9 +310,10 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Animate the dice "rolling": spins a full turn while cycling random faces,
-     * then settles on [roll] (nilai dari server).
+     * then settles on [roll] (nilai dari server). [onDone] dipanggil saat dadu
+     * berhenti (setelah wajah akhir tampil).
      */
-    private fun showDice(roll: Int) {
+    private fun showDice(roll: Int, onDone: () -> Unit = {}) {
         diceImage.removeCallbacks(faceTick)
         diceImage.animate().cancel()
         diceAnimationRunning = true
@@ -321,6 +328,7 @@ class MainActivity : AppCompatActivity() {
                 diceImage.rotation = 0f
                 diceImage.setImageResource(drawableFor(roll))
                 diceAnimationRunning = false
+                onDone()
             }
             .start()
     }
