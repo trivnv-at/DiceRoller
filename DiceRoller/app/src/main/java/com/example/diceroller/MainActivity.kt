@@ -16,16 +16,23 @@
 package com.example.diceroller
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import kotlin.concurrent.thread
 
 /**
- * This activity hosts a two-player Snakes and Ladders game. Players take turns
- * rolling a dice, move along the board, and climb ladders or slide down snakes.
- * Rolling a 6 grants an extra turn. The first player to reach square 100 wins.
+ * Ular Tangga multiplayer — Android sebagai **Player 1 (host)**.
+ *
+ * Game kini **server-authoritative**: dadu, aturan (pas-100, extra-turn,
+ * ular/tangga) & giliran ditentukan backend (GameApi). Android hanya:
+ *   - auto-buat game saat dibuka & menampilkan kode untuk Player 2 join di web,
+ *   - mengirim roll & merender state dari server,
+ *   - polling state tiap ~1.5s untuk sinkron gerakan Player 2.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -35,19 +42,37 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rollButton: Button
 
     private val playerNames = listOf("Merah", "Biru")
+
+    // Kredensial & identitas pemain lokal (Player 1 / host).
+    private var creds: GameApi.PlayerCreds? = null
+
+    // State yang dirender (cerminan server). server-authoritative.
     private var positions = intArrayOf(0, 0)
     private var currentPlayer = 0
     private var gameOver = false
 
-    // True while the dice roll animation is running, so rapid taps cannot start
-    // overlapping roll animations.
+    // True selama animasi dadu berjalan (cegah tap ganda).
     private var diceAnimationRunning = false
-
-    // True while the player token is animating across the board, so taps are
-    // ignored until the move, ladder/snake ride and bounce finish.
+    // True selama token bergerak (cegah tap).
     private var tokenAnimating = false
+    // True selama ada HTTP in-flight, cegah overlap poll/roll.
+    private var networkingActive = false
 
-    // Cycles random dice faces every ~70ms while the dice is spinning.
+    // Polling tiap 1.5s untuk sinkron gerakan Player 2.
+    private val pollDelayMs = 1500L
+    private var polling = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val pollTick = object : Runnable {
+        override fun run() {
+            pollOnce()
+            if (polling) handler.postDelayed(this, pollDelayMs)
+        }
+    }
+
+    // Snapshot roll yang sudah dianimasikan (untuk deteksi gerakan Player 2).
+    private var lastAnimatedRoll: String? = null
+
+    // Siklus random wajah dadu saat dadu berputar.
     private val faceTick = object : Runnable {
         override fun run() {
             if (!diceAnimationRunning) return
@@ -68,127 +93,230 @@ class MainActivity : AppCompatActivity() {
         boardView.positions = positions
         boardView.currentPlayer = currentPlayer
 
-        rollButton.setOnClickListener { roll() }
+        rollButton.isEnabled = false
+        statusTextView.text = "Menghubungkan ke server…"
+
+        rollButton.setOnClickListener {
+            if (gameOver) {
+                resetGame()
+            } else {
+                handleRoll()
+            }
+        }
+
+        // Auto-host: buat game sebagai Player 1 di background.
+        thread {
+            try {
+                val c = GameApi.createGame("Android")
+                runOnUiThread {
+                    creds = c
+                    statusTextView.text = "Kode Game: ${c.gameCode}\nTunggu Player 2 join di web…"
+                    startPolling()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusTextView.text = "Gagal terhubung: ${e.message}\nCek server / internet."
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        polling = false
+        handler.removeCallbacksAndMessages(null)
+    }
+
+    /** Mulai loop polling state server. */
+    private fun startPolling() {
+        polling = true
+        handler.post(pollTick)
+    }
+
+    /** Ambil state terbaru & render; animasikan gerakan Player 2 bila ada. */
+    private fun pollOnce() {
+        val c = creds ?: return
+        if (networkingActive) return
+        networkingActive = true
+        thread {
+            try {
+                val view = GameApi.getGame(c)
+                runOnUiThread {
+                    applyServerState(view)
+                    animateRemoteMove(view)
+                }
+            } catch (_: Exception) {
+                // Polling boleh gagal sesaat (server restart dsb); coba lagi nanti.
+            } finally {
+                networkingActive = false
+            }
+        }
     }
 
     /**
-     * Roll the dice, move the current player, resolve any ladder or snake, and
-     * hand the turn over (unless a 6 was rolled, which grants an extra turn).
+     * Render state server ke UI: posisi, giliran, status, winner.
      */
-    private fun roll() {
-        if (gameOver) {
-            resetGame()
-            return
+    private fun applyServerState(view: GameApi.GameView) {
+        positions = view.positions
+        currentPlayer = view.currentPlayer
+        boardView.positions = positions
+        boardView.currentPlayer = currentPlayer
+
+        if (view.status == "finished") {
+            gameOver = true
+            val winner = view.winner ?: currentPlayer
+            statusTextView.text = "Pemain ${winner + 1} (${playerNames[winner]}) MENANG!"
+            rollButton.text = getString(R.string.play_again)
+            rollButton.isEnabled = true
+        } else {
+            gameOver = false
+            if (view.status == "waiting") {
+                statusTextView.text = "Kode Game: ${creds?.gameCode}\nTunggu Player 2 join di web…"
+                rollButton.isEnabled = false
+            } else {
+                updateTurnStatus(view)
+            }
         }
-        if (tokenAnimating) return
+    }
 
-        val roll = Dice(6).roll()
-        showDice(roll)
+    /** Teks giliran + enabled state tombol roll. */
+    private fun updateTurnStatus(view: GameApi.GameView) {
+        val mine = creds?.seat == view.currentPlayer
+        statusTextView.text = "Giliran Pemain ${view.currentPlayer + 1} (${playerNames[view.currentPlayer]})." +
+            if (mine) " Lempar dadu!" else " Tunggu Player ${view.currentPlayer + 1}…"
+        // Roll hanya aktif saat giliran kita (Player 1 host) & tidak ada animasi.
+        rollButton.isEnabled = mine && !tokenAnimating
+    }
 
-        val player = currentPlayer
-        val from = positions[player]
-        val newPos = from + roll
+    /**
+     * Deteksi & animasikan gerakan Player 2 (seat 1) dari polling,
+     * berdasarkan lastRoll baru yang belum pernah dianimasikan.
+     */
+    private fun animateRemoteMove(view: GameApi.GameView) {
+        val lr = view.lastRoll ?: return
+        val mySeat = creds?.seat ?: return
+        if (lr.seat == mySeat) return // gerakan kita ditangani handleRoll()
+        val key = "${lr.seat}:${lr.from}:${lr.to}"
+        if (key == lastAnimatedRoll) return
+        lastAnimatedRoll = key
 
-        // The player must land exactly on square 100 to win.
-        if (newPos > 100) {
-            statusTextView.text = "Pemain ${player + 1} (${
-                playerNames[player]
-            }) lempar $roll — harus pas 100. Giliran Pemain ${2 - player}."
-            currentPlayer = 1 - player
-            boardView.currentPlayer = currentPlayer
-            return
+        if (lr.to != lr.from) {
+            animateToken(
+                player = lr.seat,
+                from = lr.from,
+                to = lr.to,
+                rideTo = lr.rideTo,
+            ) { applyServerState(view) }
+        } else {
+            // Overshoot / tanpa gerakan — render langsung.
+            applyServerState(view)
         }
+        showDice(lr.value)
+    }
 
-        // Resolve any ladder/snake to know the final resting square before the
-        // animation, so the token can ride up/down instead of teleporting.
-        var finalPos = newPos
-        var hasRide = false
-        UlarTanggaView.LADDERS[newPos]?.let { top ->
-            finalPos = top
-            hasRide = true
+    /** Kirim roll ke server, lalu animasikan hasilnya. */
+    private fun handleRoll() {
+        val c = creds ?: return
+        if (networkingActive || tokenAnimating || gameOver) return
+        networkingActive = true
+        rollButton.isEnabled = false
+        thread {
+            try {
+                val view = GameApi.roll(c)
+                runOnUiThread {
+                    val lr = view.lastRoll
+                    lastAnimatedRoll = if (lr != null) "${lr.seat}:${lr.from}:${lr.to}" else null
+                    if (lr != null) showDice(lr.value)
+
+                    if (lr != null && lr.to != lr.from) {
+                        animateToken(
+                            player = lr.seat,
+                            from = lr.from,
+                            to = lr.to,
+                            rideTo = lr.rideTo,
+                        ) { applyServerState(view) }
+                    } else {
+                        applyServerState(view)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusTextView.text = "Gagal roll: ${e.message}"
+                    updateTurnStatus(GameApi.GameView(
+                        status = "playing", positions = positions,
+                        currentPlayer = currentPlayer, winner = null, lastRoll = null,
+                    ))
+                }
+            } finally {
+                networkingActive = false
+            }
         }
-        UlarTanggaView.SNAKES[newPos]?.let { tail ->
-            finalPos = tail
-            hasRide = true
-        }
+    }
 
-        val baseMessage = "Pemain ${player + 1} (${playerNames[player]}) lempar $roll → $newPos"
-
+    /**
+     * Animasikan token dari [from] ke [to] (naik tangga / turun ular bila ada
+     * ride), lalu panggil [onDone]. Dipakai untuk gerakan sendiri & remote.
+     */
+    private fun animateToken(
+        player: Int,
+        from: Int,
+        to: Int,
+        rideTo: Int?,
+        onDone: () -> Unit,
+    ) {
         tokenAnimating = true
+        val hasRide = rideTo != null && rideTo != to
         boardView.playPlayerMove(
             player = player,
             from = from,
-            to = newPos,
-            rideFrom = newPos,
-            rideTo = finalPos,
+            to = to,
+            rideFrom = to,
+            rideTo = rideTo ?: to,
             hasRide = hasRide,
             onDone = {
                 tokenAnimating = false
-                finishRoll(player, finalPos, newPos, roll, hasRide, baseMessage)
+                onDone()
             }
         )
     }
 
-    /**
-     * Apply the move result once the token animation has finished: update the
-     * position, build the status message, and hand over the turn.
-     */
-    private fun finishRoll(
-        player: Int,
-        finalPos: Int,
-        landedPos: Int,
-        roll: Int,
-        hasRide: Boolean,
-        baseMessage: String
-    ) {
-        positions[player] = finalPos
-        boardView.positions = positions
-
-        var message = baseMessage
-        if (hasRide) {
-            UlarTanggaView.LADDERS[landedPos]?.let { top ->
-                message = "Pemain ${player + 1} (${playerNames[player]}): TANGGA! $landedPos → $top"
+    /** Reset / rematch via server. */
+    private fun resetGame() {
+        val c = creds ?: return
+        if (networkingActive) return
+        networkingActive = true
+        rollButton.isEnabled = false
+        thread {
+            try {
+                val view = GameApi.reset(c)
+                runOnUiThread {
+                    lastAnimatedRoll = null
+                    gameOver = false
+                    applyServerState(view)
+                }
+            } catch (e: Exception) {
+                runOnUiThread { statusTextView.text = "Gagal reset: ${e.message}" }
+            } finally {
+                networkingActive = false
             }
-            UlarTanggaView.SNAKES[landedPos]?.let { tail ->
-                message = "Pemain ${player + 1} (${playerNames[player]}): ULAR! $landedPos → $tail"
-            }
-        }
-
-        if (finalPos == 100) {
-            gameOver = true
-            statusTextView.text = "Pemain ${player + 1} (${playerNames[player]}) MENANG!"
-            rollButton.text = getString(R.string.play_again)
-            return
-        }
-
-        if (roll == 6) {
-            // Extra turn for rolling a 6.
-            statusTextView.text = "$message — dapat angka 6, lempar lagi!"
-        } else {
-            currentPlayer = 1 - player
-            boardView.currentPlayer = currentPlayer
-            statusTextView.text = "$message — giliran Pemain ${currentPlayer + 1}."
         }
     }
 
     /**
-     * Animate the dice "rolling": it spins a full turn while cycling random
-     * faces, then settles on the final [roll] result.
+     * Animate the dice "rolling": spins a full turn while cycling random faces,
+     * then settles on [roll] (nilai dari server).
      */
     private fun showDice(roll: Int) {
-        // Cancel any previous roll animation before starting a new one.
         diceImage.removeCallbacks(faceTick)
         diceImage.animate().cancel()
         diceAnimationRunning = true
 
         diceImage.postDelayed(faceTick, 70L)
-
         diceImage.animate()
             .rotationBy(360f)
             .setDuration(600L)
             .setInterpolator(DecelerateInterpolator())
             .withEndAction {
-                // Stop cycling faces and show the final result.
                 diceImage.removeCallbacks(faceTick)
                 diceImage.rotation = 0f
                 diceImage.setImageResource(drawableFor(roll))
@@ -197,9 +325,7 @@ class MainActivity : AppCompatActivity() {
             .start()
     }
 
-    /**
-     * Map a dice roll (1..6) to its drawable resource.
-     */
+    /** Map a dice roll (1..6) to its drawable resource. */
     private fun drawableFor(roll: Int): Int {
         return when (roll) {
             1 -> R.drawable.dice_1
@@ -209,32 +335,5 @@ class MainActivity : AppCompatActivity() {
             5 -> R.drawable.dice_5
             else -> R.drawable.dice_6
         }
-    }
-
-    /**
-     * Reset the board for a new game.
-     */
-    private fun resetGame() {
-        positions = intArrayOf(0, 0)
-        currentPlayer = 0
-        gameOver = false
-        tokenAnimating = false
-        boardView.positions = positions
-        boardView.currentPlayer = currentPlayer
-        rollButton.text = getString(R.string.roll_snakes)
-        statusTextView.text = getString(R.string.turn_start)
-    }
-}
-
-/**
- * Dice with a fixed number of sides.
- */
-class Dice(private val numSides: Int) {
-
-    /**
-     * Do a random dice roll and return the result.
-     */
-    fun roll(): Int {
-        return (1..numSides).random()
     }
 }
