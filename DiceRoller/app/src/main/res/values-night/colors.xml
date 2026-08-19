@@ -1,0 +1,28 @@
+<!--
+    Brand palette dark (seed amber) — fallback utk API < 31 saat mode gelap.
+    API 31+ memakai dynamic color, jadi file ini hanya aktif di perangkat
+    tanpa dynamic color.
+-->
+<resources>
+    <color name="colorPrimary">#FFB95C</color>
+    <color name="colorOnPrimary">#4A2900</color>
+    <color name="colorPrimaryContainer">#6B4100</color>
+    <color name="colorOnPrimaryContainer">#FFDEA6</color>
+    <color name="colorSecondary">#DEC5A4</color>
+    <color name="colorOnSecondary">#3D2E18</color>
+    <color name="colorSecondaryContainer">#56442B</color>
+    <color name="colorOnSecondaryContainer">#FBE1BE</color>
+    <color name="colorTertiary">#BBD0A1</color>
+    <color name="colorOnTertiary">#273713</color>
+    <color name="colorTertiaryContainer">#3E4F2A</color>
+    <color name="colorOnTertiaryContainer">#D7ECBC</color>
+    <color name="colorError">#FFB4AB</color>
+    <color name="colorOnError">#690005</color>
+    <color name="colorErrorContainer">#93000A</color>
+    <color name="colorOnErrorContainer">#FFDAD6</color>
+    <color name="colorSurface">#1A120A</color>
+    <color name="colorOnSurface">#F1E0D4</color>
+    <color name="colorSurfaceVariant">#504539</color>
+    <color name="colorOnSurfaceVariant">#D4C3B2</color>
+    <color name="colorOutline">#9C8D7E</color>
+</resources>

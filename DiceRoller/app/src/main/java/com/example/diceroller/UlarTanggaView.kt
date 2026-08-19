@@ -21,11 +21,14 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.Interpolator
+import com.google.android.material.R.attr as m3attr
 import kotlin.math.PI
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -82,42 +85,100 @@ class UlarTanggaView @JvmOverloads constructor(
     /** What the token is currently animating through. */
     private enum class AnimKind { NONE, MOVE, RIDE }
 
-    private val gridPaint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2f
-        color = Color.parseColor("#455A64")
-    }
+    // ---- Paint & warna (Material 3 color roles) ----
+    // Warna diselesaikan SEKALI di init() dari theme (bukan onDraw tiap frame)
+    // agar performa tetap & mengikuti tema: dynamic color (API 31+), brand
+    // fallback (<31), serta light/dark (DayNight). Hex lama diganti role:
+    //   grid=colorOutline, sel A/B=surface/surfaceVariant, angka=onSurfaceVariant,
+    //   tangga=tertiary, ular/tokenP1=error, tokenP2=primary, outline=surface,
+    //   ring=primary, start/goal=primaryContainer.
+    private val gridPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f }
     private val cellFillPaint = Paint().apply { style = Paint.Style.FILL }
-    private val numberPaint = Paint().apply {
-        color = Color.parseColor("#78909C")
-        textAlign = Paint.Align.CENTER
-    }
+    private val numberPaint = Paint().apply { textAlign = Paint.Align.CENTER }
     private val ladderPaint = Paint().apply {
-        color = Color.parseColor("#4CAF50")
-        strokeWidth = 8f
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
+        style = Paint.Style.STROKE; strokeWidth = 8f; strokeCap = Paint.Cap.ROUND
+    }
+    private val ladderShadowPaint = Paint().apply {
+        style = Paint.Style.STROKE; strokeWidth = 13f; strokeCap = Paint.Cap.ROUND
     }
     private val snakePaint = Paint().apply {
-        color = Color.parseColor("#E53935")
-        strokeWidth = 8f
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
+        style = Paint.Style.STROKE; strokeWidth = 8f; strokeCap = Paint.Cap.ROUND
+    }
+    private val snakeShadowPaint = Paint().apply {
+        style = Paint.Style.STROKE; strokeWidth = 14f; strokeCap = Paint.Cap.ROUND
     }
     private val playerPaints = listOf(
-        Paint().apply { color = Color.parseColor("#E53935") }, // player 1 red
-        Paint().apply { color = Color.parseColor("#1E88E5") }  // player 2 blue
+        Paint().apply { style = Paint.Style.FILL }, // player 1 (error)
+        Paint().apply { style = Paint.Style.FILL }  // player 2 (primary)
     )
-    private val tokenOutline = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2f
-        color = Color.WHITE
+    private val tokenOutline = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+    private val highlightPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 5f }
+    private val highlightHaloPaint = Paint().apply { style = Paint.Style.FILL }
+    private val tokenShadowPaint = Paint().apply { style = Paint.Style.FILL }
+    private val tokenGlossPaint = Paint().apply { style = Paint.Style.FILL }
+    private val boardPanelPaint = Paint().apply { style = Paint.Style.FILL }
+
+    // Warna role hasil resolve (dipakai di onDraw).
+    private var cellFillAColor = 0
+    private var cellFillBColor = 0
+    private var startGoalColor = 0
+    private var boardPanelColor = 0
+    private var boardPanelGradEnd = 0
+    private var lastDrawW = -1
+
+    // Radius sudut sel rounded (fraksi lebar sel) — redesign.
+    private val cornerRadiusRatio = 0.12f
+
+    init {
+        val ta = context.theme.obtainStyledAttributes(intArrayOf(
+            m3attr.colorOutline,                 // 0 grid
+            m3attr.colorSurface,                 // 1 sel A
+            m3attr.colorSurfaceVariant,          // 2 sel B
+            m3attr.colorOnSurfaceVariant,        // 3 angka
+            m3attr.colorTertiary,                // 4 tangga
+            m3attr.colorError,                   // 5 ular + token P1
+            m3attr.colorPrimary,                 // 6 token P2 + ring aktif
+            m3attr.colorSurface,                 // 7 outline token
+            m3attr.colorPrimaryContainer,        // 8 sel start/goal
+            m3attr.colorSurfaceVariant           // 9 panel papan
+        ))
+        val fb = 0xFF8F5C00.toInt()
+        gridPaint.color = ta.getColor(0, fb)
+        cellFillAColor = ta.getColor(1, fb)
+        cellFillBColor = ta.getColor(2, fb)
+        numberPaint.color = ta.getColor(3, fb)
+        ladderPaint.color = ta.getColor(4, fb)
+        snakePaint.color = ta.getColor(5, fb)
+        playerPaints[0].color = ta.getColor(5, fb)
+        playerPaints[1].color = ta.getColor(6, fb)
+        tokenOutline.color = ta.getColor(7, fb)
+        highlightPaint.color = ta.getColor(6, fb)
+        startGoalColor = ta.getColor(8, fb)
+        boardPanelColor = ta.getColor(9, fb)
+        ta.recycle()
+
+        // Turunan translusen utk depth/shadow/gloss.
+        ladderShadowPaint.color = shade(ladderPaint.color, 0.35f, 0.5f)
+        snakeShadowPaint.color = shade(snakePaint.color, 0.30f, 0.55f)
+        tokenShadowPaint.color = Color.argb(90, 0, 0, 0)
+        tokenGlossPaint.color = Color.argb(100, 255, 255, 255)
+        highlightHaloPaint.color = withAlpha(highlightPaint.color, 0.25f)
+        boardPanelGradEnd = shade(boardPanelColor, 0.90f, 1f)
     }
-    // Bright ring drawn around the token of the active player.
-    private val highlightPaint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-        color = Color.parseColor("#FFC107")
+
+    /** Argba dari [color] dgn alpha diskala [alphaFrac] (0..1). */
+    private fun withAlpha(color: Int, alphaFrac: Float): Int {
+        val a = (Color.alpha(color) * alphaFrac).toInt().coerceIn(0, 255)
+        return Color.argb(a, Color.red(color), Color.green(color), Color.blue(color))
+    }
+
+    /** Versi gelap + translusen dari [color] utk depth/shadow. */
+    private fun shade(color: Int, factor: Float, alphaFrac: Float): Int {
+        val r = (Color.red(color) * factor).toInt().coerceIn(0, 255)
+        val g = (Color.green(color) * factor).toInt().coerceIn(0, 255)
+        val b = (Color.blue(color) * factor).toInt().coerceIn(0, 255)
+        val a = (Color.alpha(color) * alphaFrac).toInt().coerceIn(0, 255)
+        return Color.argb(a, r, g, b)
     }
 
     /**
@@ -283,23 +344,38 @@ class UlarTanggaView @JvmOverloads constructor(
     }
 
     /**
-     * Draw the 10x10 grid with alternating cell fills and small square numbers.
+     * Draw the 10x10 grid with rounded alternating cell fills, small square
+     * numbers, and a softly-gradiented panel behind. Start (1) & goal (100)
+     * cells are highlighted with primaryContainer.
      */
     private fun drawBoard(canvas: Canvas, sq: Float, ox: Float, oy: Float) {
+        val bw = 10 * sq
+        val corner = sq * cornerRadiusRatio
+
+        // Panel papan (background) rounded dgn gradien halus — cache shader per lebar.
+        if (boardPanelPaint.shader == null || lastDrawW != width) {
+            boardPanelPaint.shader = LinearGradient(
+                0f, oy, 0f, oy + bw,
+                boardPanelColor, boardPanelGradEnd, Shader.TileMode.CLAMP
+            )
+            lastDrawW = width
+        }
+        canvas.drawRoundRect(ox, oy, ox + bw, oy + bw, sq * 0.6f, sq * 0.6f, boardPanelPaint)
+
         for (row in 0 until 10) {
             for (col in 0 until 10) {
                 val left = ox + col * sq
                 val top = oy + row * sq
-                cellFillPaint.color = if ((row + col) % 2 == 0) {
-                    Color.parseColor("#FFF3E0")
-                } else {
-                    Color.parseColor("#FFE0B2")
+                val squareNumber = squareNumberAt(row, col)
+                cellFillPaint.color = when {
+                    squareNumber == 1 || squareNumber == 100 -> startGoalColor
+                    (row + col) % 2 == 0 -> cellFillAColor
+                    else -> cellFillBColor
                 }
-                canvas.drawRect(left, top, left + sq, top + sq, cellFillPaint)
-                canvas.drawRect(left, top, left + sq, top + sq, gridPaint)
+                canvas.drawRoundRect(left, top, left + sq, top + sq, corner, corner, cellFillPaint)
+                canvas.drawRoundRect(left, top, left + sq, top + sq, corner, corner, gridPaint)
 
                 numberPaint.textSize = sq * 0.2f
-                val squareNumber = squareNumberAt(row, col)
                 canvas.drawText(
                     squareNumber.toString(),
                     left + sq / 2f,
@@ -349,6 +425,7 @@ class UlarTanggaView @JvmOverloads constructor(
                 val midY = (hy + ty) / 2f - dx * 0.2f
                 quadTo(midX, midY, tx, ty)
             }
+            canvas.drawPath(path, snakeShadowPaint) // depth/bayangan
             canvas.drawPath(path, snakePaint)
         }
     }
@@ -367,11 +444,18 @@ class UlarTanggaView @JvmOverloads constructor(
             val px = -dy / len * sq * 0.18f
             val py = dx / len * sq * 0.18f
 
+            // Pass bayangan (depth) di bawah rails & rungs, lalu pass utama.
+            val rungs = 4
+            canvas.drawLine(bx + px, by + py, tx + px, ty + py, ladderShadowPaint)
+            canvas.drawLine(bx - px, by - py, tx - px, ty - py, ladderShadowPaint)
+            for (i in 1 until rungs) {
+                val f = i.toFloat() / rungs
+                val rx = bx + (tx - bx) * f
+                val ry = by + (ty - by) * f
+                canvas.drawLine(rx + px, ry + py, rx - px, ry - py, ladderShadowPaint)
+            }
             canvas.drawLine(bx + px, by + py, tx + px, ty + py, ladderPaint)
             canvas.drawLine(bx - px, by - py, tx - px, ty - py, ladderPaint)
-
-            // Draw a few rungs between the rails.
-            val rungs = 4
             for (i in 1 until rungs) {
                 val f = i.toFloat() / rungs
                 val rx = bx + (tx - bx) * f
@@ -399,11 +483,9 @@ class UlarTanggaView @JvmOverloads constructor(
                 // squash/stretch landing: oval dgn radius diskala, pusat tetap.
                 val rx = r * squashScaleX
                 val ry = r * squashScaleY
-                canvas.drawOval(cx - rx, ty - ry, cx + rx, ty + ry, paint)
-                canvas.drawOval(cx - rx, ty - ry, cx + rx, ty + ry, tokenOutline)
+                drawTokenBody(canvas, cx, ty, rx, ry, p, paint)
             } else {
-                canvas.drawCircle(cx, ty, r, paint)
-                canvas.drawCircle(cx, ty, r, tokenOutline)
+                drawTokenBody(canvas, cx, ty, r, r, p, paint)
             }
             if (p == currentPlayer) {
                 // Ring ikut bentuk token: pakai rx (diskala) saat squash, else r.
@@ -411,6 +493,32 @@ class UlarTanggaView @JvmOverloads constructor(
                 canvas.drawCircle(cx, ty, ringR + highlightPaint.strokeWidth, highlightPaint)
             }
         }
+    }
+
+    /**
+     * Gambar satu token: halo ring aktif (di belakang), drop shadow (under-draw,
+     * menghindari setShadowLayer/software layer), body oval + outline, lalu gloss
+     * kecil di kuadran atas. Tetap mengikuti squash/stretch via [rx]/[ry].
+     */
+    private fun drawTokenBody(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        rx: Float,
+        ry: Float,
+        p: Int,
+        fill: Paint
+    ) {
+        if (p == currentPlayer) {
+            canvas.drawCircle(cx, cy, rx + highlightPaint.strokeWidth * 0.6f, highlightHaloPaint)
+        }
+        // Drop shadow: lingkaran gelap translusen, offset ke bawah.
+        canvas.drawCircle(cx, cy + rx * 0.14f, rx, tokenShadowPaint)
+        // Body.
+        canvas.drawOval(cx - rx, cy - ry, cx + rx, cy + ry, fill)
+        canvas.drawOval(cx - rx, cy - ry, cx + rx, cy + ry, tokenOutline)
+        // Gloss: lingkaran kecil putih translusen di kuadran atas-kiri.
+        canvas.drawCircle(cx - rx * 0.28f, cy - ry * 0.42f, rx * 0.16f, tokenGlossPaint)
     }
 
     /**

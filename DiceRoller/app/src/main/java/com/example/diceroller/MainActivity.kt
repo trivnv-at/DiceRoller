@@ -21,12 +21,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.animation.DecelerateInterpolator
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
 import kotlin.concurrent.thread
 
 /**
@@ -43,8 +43,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusTextView: TextView
     private lateinit var boardView: UlarTanggaView
     private lateinit var diceImage: ImageView
-    private lateinit var rollButton: Button
-    private lateinit var lbButton: Button
+    private lateinit var rollButton: MaterialButton
+    private lateinit var lbButton: MaterialButton
 
     private val playerNames = listOf("Merah", "Biru")
 

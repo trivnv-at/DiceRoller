@@ -1,0 +1,10 @@
+<!--
+    API 31+ (Android 12+): dynamic color (Material You) — warna diambil dari
+    wallpaper, light & dark otomatis. Tanpa override warna brand di sini agar
+    tema ikut wallpaper sepenuhnya.
+-->
+<resources>
+
+    <style name="AppTheme" parent="Theme.Material3.DynamicColors.DayNight" />
+
+</resources>
