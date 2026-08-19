@@ -63,6 +63,8 @@ class MainActivity : AppCompatActivity() {
 
     // True selama animasi dadu berjalan (cegah tap ganda).
     private var diceAnimationRunning = false
+    // True selama token bergerak (cegah tap).
+    private var tokenAnimating = false
     // True selama ada HTTP in-flight, cegah overlap poll/roll.
     private var networkingActive = false
 
@@ -307,8 +309,8 @@ class MainActivity : AppCompatActivity() {
         val mine = creds?.seat == view.currentPlayer
         statusTextView.text = "Giliran Pemain ${view.currentPlayer + 1} (${playerNames[view.currentPlayer]})." +
             if (mine) " Lempar dadu!" else " Tunggu Player ${view.currentPlayer + 1}…"
-        // Roll hanya aktif saat giliran kita (Player 1 host).
-        rollButton.isEnabled = mine
+        // Roll hanya aktif saat giliran kita (Player 1 host) & tidak ada animasi.
+        rollButton.isEnabled = mine && !tokenAnimating
     }
 
     /**
@@ -337,15 +339,28 @@ class MainActivity : AppCompatActivity() {
             applyServerState(view)
             return
         }
-        // Tampilkan dadu (600ms), lalu render posisi server langsung (tanpa
-        // animasi token untuk saat ini — akan diatur ulang).
-        showDice(lr.value) { applyServerState(view) }
+        showDice(lr.value) {
+            handler.postDelayed({
+                if (lr.to != lr.from) {
+                    animateToken(
+                        player = lr.seat,
+                        from = lr.from,
+                        to = lr.to,
+                        rideFrom = lr.rideFrom,
+                        rideTo = lr.rideTo,
+                    ) { applyServerState(view) }
+                } else {
+                    // Overshoot / tanpa gerakan — render langsung.
+                    applyServerState(view)
+                }
+            }, 800L)
+        }
     }
 
-    /** Kirim roll ke server, lalu render hasilnya. */
+    /** Kirim roll ke server, lalu animasikan hasilnya. */
     private fun handleRoll() {
         val c = creds ?: return
-        if (networkingActive || gameOver) return
+        if (networkingActive || tokenAnimating || gameOver) return
         networkingActive = true
         rollButton.isEnabled = false
         thread {
@@ -368,6 +383,42 @@ class MainActivity : AppCompatActivity() {
                 networkingActive = false
             }
         }
+    }
+
+    /**
+     * Animasikan token dari [from] ke [to] (naik tangga / turun ular bila ada
+     * ride), lalu panggil [onDone]. Dipakai untuk gerakan sendiri & remote.
+     */
+    private fun animateToken(
+        player: Int,
+        from: Int,
+        to: Int,
+        rideFrom: Int?,
+        rideTo: Int?,
+        onDone: () -> Unit,
+    ) {
+        tokenAnimating = true
+        // Ride terdeteksi dari rideFrom/rideTo (BUKAN `to`): `to` sudah = posisi
+        // akhir/resolved (= rideTo saat ada ride), jadi `rideTo != to` selalu
+        // false (Bug #12). Pakai rideFrom != rideTo.
+        val hasRide = rideFrom != null && rideFrom != rideTo
+        // MOVE berhenti di dasar tangga / kepala ular (rideFrom), atau di `to`
+        // bila tanpa ride.
+        val moveTo = rideFrom ?: to
+        // Landing squash lebih dalam saat menang (mendarat di 100, pas-100).
+        val isWin = (rideTo ?: to) >= 100
+        boardView.playPlayerMove(
+            player = player,
+            from = from,
+            rideFrom = moveTo,
+            rideTo = rideTo ?: moveTo,
+            hasRide = hasRide,
+            isWin = isWin,
+            onDone = {
+                tokenAnimating = false
+                onDone()
+            }
+        )
     }
 
     /** Reset / rematch via server. */
