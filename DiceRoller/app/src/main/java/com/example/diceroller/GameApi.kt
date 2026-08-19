@@ -69,10 +69,15 @@ object GameApi {
         val rank: Int,
     )
 
-    /** Host buat game baru. Player 1 = seat 0. accountId opsional (lapis-1). */
-    fun createGame(name: String, accountId: String? = null): PlayerCreds {
+    /**
+     * Host buat game baru. Player 1 = seat 0. accountId opsional (lapis-1).
+     * Bila `vsBot` true, server auto-join bot sebagai seat 1 (status langsung
+     * playing) — lawan AI dikelola server (lihat backend/src/lib/bot.ts).
+     */
+    fun createGame(name: String, accountId: String? = null, vsBot: Boolean = false): PlayerCreds {
         val acc = if (accountId != null) ",\"accountId\":\"${accountId.escapeJson()}\"" else ""
-        val root = JSONObject(request("POST", "/games", "{\"name\":\"${name.escapeJson()}\"$acc}"))
+        val bot = if (vsBot) ",\"vsBot\":true" else ""
+        val root = JSONObject(request("POST", "/games", "{\"name\":\"${name.escapeJson()}\"$acc$bot}"))
         return PlayerCreds(
             gameId = root.getString("gameId"),
             gameCode = root.getString("gameCode"),

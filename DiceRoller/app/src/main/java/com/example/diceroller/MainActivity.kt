@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diceImage: ImageView
     private lateinit var rollButton: MaterialButton
     private lateinit var lbButton: MaterialButton
+    private lateinit var botButton: MaterialButton
 
     private val playerNames = listOf("Merah", "Biru")
 
@@ -107,11 +108,13 @@ class MainActivity : AppCompatActivity() {
         diceImage = findViewById(R.id.diceImage)
         rollButton = findViewById(R.id.button)
         lbButton = findViewById(R.id.leaderboardButton)
+        botButton = findViewById(R.id.botButton)
 
         boardView.positions = positions
         boardView.currentPlayer = currentPlayer
 
         rollButton.isEnabled = false
+        botButton.isEnabled = false // aktif saat game "waiting" (Player 2 belum join)
         statusTextView.text = "Menghubungkan ke server…"
 
         rollButton.setOnClickListener {
@@ -122,6 +125,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         lbButton.setOnClickListener { showLeaderboard() }
+        botButton.setOnClickListener { startBotGame() }
 
         // Lapis-1: muat akun dari SharedPreferences.
         accountId = prefs.getString("account_id", null)
@@ -153,6 +157,40 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     statusTextView.text = "Gagal terhubung: ${e.message}\nCek server / internet."
                 }
+            }
+        }
+    }
+
+    /**
+     * Main vs Bot (solo): tinggalkan game PvP yang masih menunggu Player 2,
+     * buat game baru dgn `vsBot:true` (server auto-join bot sebagai seat 1),
+     * lalu mulai polling — bot bergerak otomatis (lazy, server-side).
+     */
+    private fun startBotGame() {
+        if (networkingActive) return
+        stopPolling()                      // lepas polling game PvP lama
+        lastAnimatedRoll = null
+        pendingSeat = -1
+        gameOver = false
+        botButton.isEnabled = false
+        statusTextView.text = "Menyiapkan lawan Bot…"
+        networkingActive = true
+        val name = accountName ?: "Player"
+        val acc = accountId
+        thread {
+            try {
+                val c = GameApi.createGame(name, acc, vsBot = true)
+                runOnUiThread {
+                    creds = c
+                    statusTextView.text = "Main vs Bot — kode ${c.gameCode}"
+                    startPolling()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusTextView.text = "Gagal buat game bot: ${e.message}\nCek server / internet."
+                }
+            } finally {
+                networkingActive = false
             }
         }
     }
@@ -264,6 +302,11 @@ class MainActivity : AppCompatActivity() {
         handler.post(pollTick)
     }
 
+    /** Hentikan loop polling (pollTick berhenti menjadwalkan ulang). */
+    private fun stopPolling() {
+        polling = false
+    }
+
     /** Ambil state terbaru & render; animasikan gerakan Player 2 bila ada. */
     private fun pollOnce() {
         val c = creds ?: return
@@ -317,8 +360,12 @@ class MainActivity : AppCompatActivity() {
             if (view.status == "waiting") {
                 statusTextView.text = "Kode Game: ${creds?.gameCode}\nTunggu Player 2 join di web…"
                 rollButton.isEnabled = false
+                // Belum ada Player 2 -> boleh beralih ke "Main vs Bot" (solo).
+                botButton.isEnabled = true
             } else {
                 updateTurnStatus(view)
+                // Game sedang/sudah dimainkan -> jangan biarkan beralih ke bot.
+                botButton.isEnabled = false
             }
         }
     }
