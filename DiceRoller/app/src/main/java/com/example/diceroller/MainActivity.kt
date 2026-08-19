@@ -67,6 +67,11 @@ class MainActivity : AppCompatActivity() {
     private var tokenAnimating = false
     // True selama ada HTTP in-flight, cegah overlap poll/roll.
     private var networkingActive = false
+    // Saat ada roll belum dianimasikan: tahan token pemain itu di posisi asal
+    // (from) selama jeda dadu+delay, agar tidak "teleport" ke posisi akhir
+    // (mirror web yg menahan token di posisi lama). -1 = tidak ada roll pending.
+    private var pendingSeat = -1
+    private var pendingFrom = 0
 
     // Polling tiap 0.5s untuk sinkron gerakan Player 2.
     private val pollDelayMs = 500L
@@ -266,8 +271,10 @@ class MainActivity : AppCompatActivity() {
             try {
                 val view = GameApi.getGame(c)
                 runOnUiThread {
-                    applyServerState(view)
+                    // Deteksi gerakan dulu (set pendingSeat) SEBELUM applyServerState,
+                    // agar token ditahan di posisi asal (tanpa flash ke posisi akhir).
                     animateRemoteMove(view)
+                    applyServerState(view)
                 }
             } catch (_: Exception) {
                 // Polling boleh gagal sesaat (server restart dsb); coba lagi nanti.
@@ -283,7 +290,15 @@ class MainActivity : AppCompatActivity() {
     private fun applyServerState(view: GameApi.GameView) {
         positions = view.positions
         currentPlayer = view.currentPlayer
-        boardView.positions = positions
+        // Selama ada roll yang belum dianimasikan, tahan token pemain itu di
+        // posisi asal (from) — jangan biarkan polling langsung menaruhnya di
+        // posisi akhir (yang memicu "teleport" di awal perpindahan).
+        val renderPos = if (pendingSeat in positions.indices) {
+            positions.copyOf().also { it[pendingSeat] = pendingFrom }
+        } else {
+            positions
+        }
+        boardView.positions = renderPos
         boardView.currentPlayer = currentPlayer
 
         if (view.status == "finished") {
@@ -336,9 +351,14 @@ class MainActivity : AppCompatActivity() {
      */
     private fun applyDelayedMove(view: GameApi.GameView, lr: GameApi.LastRoll?) {
         if (lr == null) {
+            pendingSeat = -1
             applyServerState(view)
             return
         }
+        // Tandai roll pending: tahan token pemain ini di posisi asal (from)
+        // selama dadu berputar + delay, hingga animasi selesai.
+        pendingSeat = lr.seat
+        pendingFrom = lr.from
         showDice(lr.value) {
             handler.postDelayed({
                 if (lr.to != lr.from) {
@@ -348,9 +368,13 @@ class MainActivity : AppCompatActivity() {
                         to = lr.to,
                         rideFrom = lr.rideFrom,
                         rideTo = lr.rideTo,
-                    ) { applyServerState(view) }
+                    ) {
+                        pendingSeat = -1
+                        applyServerState(view)
+                    }
                 } else {
                     // Overshoot / tanpa gerakan — render langsung.
+                    pendingSeat = -1
                     applyServerState(view)
                 }
             }, 800L)
