@@ -25,12 +25,25 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
 import android.view.View
-import android.view.animation.DecelerateInterpolator
+import android.view.animation.Interpolator
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.sin
+
+/**
+ * Easing masuk-keluar halus (Penner cubic ease-in-out) — mirror `easeInOut`
+ * di web (`web/src/components/Board.tsx`). Dipakai utk pergerakan token MOVE
+ * & RIDE agar sinkron dgn web.
+ */
+private class EaseInOutInterpolator : Interpolator {
+    override fun getInterpolation(input: Float): Float {
+        val t = input.toDouble()
+        val r = if (t < 0.5) 4 * t * t * t else 1 - (-2 * t + 2).pow(3.0) / 2
+        return r.toFloat()
+    }
+}
 
 /**
  * Custom View that draws a classic 10x10 Snakes and Ladders board (100 squares)
@@ -196,7 +209,7 @@ class UlarTanggaView @JvmOverloads constructor(
         animProgress = 0f
         val av = ValueAnimator.ofFloat(0f, 1f).apply {
             this.duration = duration
-            interpolator = DecelerateInterpolator()
+            interpolator = EaseInOutInterpolator()
             addUpdateListener {
                 animProgress = it.animatedValue as Float
                 invalidate()
@@ -348,7 +361,7 @@ class UlarTanggaView @JvmOverloads constructor(
             } else {
                 tokenCenterForSquare(positions[p], p, sq, ox, oy, r)
             }
-            val ty = cy + bounceOffset(p, sq) + hopOffset(p, sq)
+            val ty = cy + bounceOffset(p, sq)
             canvas.drawCircle(cx, ty, r, paint)
             canvas.drawCircle(cx, ty, r, tokenOutline)
             if (p == currentPlayer) {
@@ -426,16 +439,5 @@ class UlarTanggaView @JvmOverloads constructor(
         val height = sq * 0.6f
         val bounces = 2f
         return -height * sin(bounceProgress * PI * 2.0 * bounces).toFloat() * (1f - bounceProgress)
-    }
-
-    /**
-     * Vertical "hop" offset selama token berjalan (MOVE): satu siklus naik-turun
-     * per kotak yang dilewati, sehingga token tampak memantul antar kotak.
-     */
-    private fun hopOffset(p: Int, sq: Float): Float {
-        if (p != animPlayer || animKind != AnimKind.MOVE) return 0f
-        val steps = abs(animTo - animFrom).coerceAtLeast(1)
-        val height = sq * 0.5f
-        return -height * sin(animProgress * PI * steps).toFloat()
     }
 }
