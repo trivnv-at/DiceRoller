@@ -148,21 +148,21 @@ class UlarTanggaView @JvmOverloads constructor(
     }
 
     /**
-     * Play a player's full move: walk [from]..[to] square by square, optionally
-     * ride a ladder/snake from [rideFrom] to [rideTo], bounce on arrival, then
-     * invoke [onDone].
+     * Play a player's full move: walk [from]..[rideFrom] square by square (dice
+     * steps only go as far as the base of a ladder / head of a snake), then
+     * optionally ride a ladder/snake from [rideFrom] to [rideTo], bounce on
+     * arrival, then invoke [onDone].
      */
     fun playPlayerMove(
         player: Int,
         from: Int,
-        to: Int,
         rideFrom: Int,
         rideTo: Int,
         hasRide: Boolean,
         onDone: () -> Unit
     ) {
         stopAnimator()
-        animateBetween(player, from, to, AnimKind.MOVE, 550L) {
+        animateBetween(player, from, rideFrom, AnimKind.MOVE, 550L) {
             if (hasRide) {
                 animateBetween(player, rideFrom, rideTo, AnimKind.RIDE, 700L) {
                     bounce(player, 600L, onDone)

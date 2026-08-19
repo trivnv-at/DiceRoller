@@ -221,6 +221,7 @@ class MainActivity : AppCompatActivity() {
                         player = lr.seat,
                         from = lr.from,
                         to = lr.to,
+                        rideFrom = lr.rideFrom,
                         rideTo = lr.rideTo,
                     ) { applyServerState(view) }
                 } else {
@@ -267,17 +268,23 @@ class MainActivity : AppCompatActivity() {
         player: Int,
         from: Int,
         to: Int,
+        rideFrom: Int?,
         rideTo: Int?,
         onDone: () -> Unit,
     ) {
         tokenAnimating = true
-        val hasRide = rideTo != null && rideTo != to
+        // Ride terdeteksi dari rideFrom/rideTo (BUKAN `to`): `to` sudah = posisi
+        // akhir/resolved (= rideTo saat ada ride), jadi `rideTo != to` selalu
+        // false (Bug #12). Pakai rideFrom != rideTo.
+        val hasRide = rideFrom != null && rideFrom != rideTo
+        // MOVE berhenti di dasar tangga / kepala ular (rideFrom), atau di `to`
+        // bila tanpa ride.
+        val moveTo = rideFrom ?: to
         boardView.playPlayerMove(
             player = player,
             from = from,
-            to = to,
-            rideFrom = to,
-            rideTo = rideTo ?: to,
+            rideFrom = moveTo,
+            rideTo = rideTo ?: moveTo,
             hasRide = hasRide,
             onDone = {
                 tokenAnimating = false
