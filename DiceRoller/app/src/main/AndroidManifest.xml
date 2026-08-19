@@ -18,6 +18,8 @@
 
     <!-- Akses internet untuk terhubung ke backend ular-tangga -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Haptic feedback (getar saat hop/roll/menang) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"

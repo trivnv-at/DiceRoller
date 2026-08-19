@@ -235,6 +235,7 @@ class UlarTanggaView @JvmOverloads constructor(
     private var animator: ValueAnimator? = null
     private var animDuration = 0L   // durasi penuh ValueAnimator (MOVE = WALK + LAND_MS)
     private var animIsWin = false   // squash besar saat hop terakhir menang (mirror web)
+    private var lastHopPlayed = -1  // hop terakhir yg sudah bersuara (per MOVE)
 
     // Landing squash & stretch (seragam dgn web): konstanta sinkron LAND_MS/DEPTH.
     private val LAND_MS = 140L
@@ -277,7 +278,10 @@ class UlarTanggaView @JvmOverloads constructor(
     ) {
         stopAnimator()
         animIsWin = isWin
+        lastHopPlayed = -1
         if (hasRide) {
+            // Suara slide tangga/ular (naik / turun) sesuai arah ride.
+            if (rideTo > rideFrom) SoundPlayer.ladder() else SoundPlayer.snake()
             // MOVE per-hop (squash inline tiap hop), lalu RIDE slide lurus, lalu
             // squash sekali saat mendarat tujuan tangga/ular.
             animateBetween(player, from, rideFrom, AnimKind.MOVE, 550L) {
@@ -325,6 +329,16 @@ class UlarTanggaView @JvmOverloads constructor(
             if (kind == AnimKind.RIDE) interpolator = EaseInOutInterpolator()
             addUpdateListener {
                 animProgress = it.animatedValue as Float
+                // Hop per-kotak (MOVE): bunyi hop + getar tiap token masuk kotak baru.
+                if (kind == AnimKind.MOVE) {
+                    val steps = (to - from).coerceAtLeast(1)
+                    val hopIdx = (animProgress * steps).toInt().coerceIn(0, steps - 1)
+                    if (hopIdx != lastHopPlayed) {
+                        lastHopPlayed = hopIdx
+                        SoundPlayer.hop()
+                        SoundPlayer.vibrateShort()
+                    }
+                }
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -344,6 +358,7 @@ class UlarTanggaView @JvmOverloads constructor(
         squashPlayer = player
         squashScaleX = 1f
         squashScaleY = 1f
+        SoundPlayer.land() // landing squash setelah slide tangga/ular
         val depth = if (isWin) WIN_DEPTH else DEPTH
         val av = ValueAnimator.ofFloat(0f, 1f).apply {
             this.duration = LAND_MS

@@ -100,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        SoundPlayer.init(this) // siapkan efek suara + haptic
+
         statusTextView = findViewById(R.id.statusTextView)
         boardView = findViewById(R.id.boardView)
         diceImage = findViewById(R.id.diceImage)
@@ -307,6 +309,8 @@ class MainActivity : AppCompatActivity() {
             statusTextView.text = "Pemain ${winner + 1} (${playerNames[winner]}) MENANG!"
             rollButton.text = getString(R.string.play_again)
             rollButton.isEnabled = true
+            SoundPlayer.win() // arpeggio menang + getar panjang
+            SoundPlayer.vibrateWin()
             refreshOwnStats()
         } else {
             gameOver = false
@@ -495,6 +499,8 @@ class MainActivity : AppCompatActivity() {
         diceImage.animate().cancel()
         diceAnimationRunning = true
 
+        SoundPlayer.roll() // suara dadu berputar + getar
+        SoundPlayer.vibrateShort()
         diceImage.postDelayed(faceTick, 70L)
         diceImage.animate()
             .rotationBy(360f)
@@ -504,6 +510,7 @@ class MainActivity : AppCompatActivity() {
                 diceImage.removeCallbacks(faceTick)
                 diceImage.rotation = 0f
                 diceImage.setImageResource(drawableFor(roll))
+                SoundPlayer.land() // dadu mendarat di nilai akhir
                 diceAnimationRunning = false
                 onDone()
             }
