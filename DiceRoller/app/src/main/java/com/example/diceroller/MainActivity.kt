@@ -405,12 +405,15 @@ class MainActivity : AppCompatActivity() {
         // MOVE berhenti di dasar tangga / kepala ular (rideFrom), atau di `to`
         // bila tanpa ride.
         val moveTo = rideFrom ?: to
+        // Landing squash lebih dalam saat menang (mendarat di 100, pas-100).
+        val isWin = (rideTo ?: to) >= 100
         boardView.playPlayerMove(
             player = player,
             from = from,
             rideFrom = moveTo,
             rideTo = rideTo ?: moveTo,
             hasRide = hasRide,
+            isWin = isWin,
             onDone = {
                 tokenAnimating = false
                 onDone()

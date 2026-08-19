@@ -39,10 +39,15 @@ import kotlin.math.sin
  */
 private class EaseInOutInterpolator : Interpolator {
     override fun getInterpolation(input: Float): Float {
-        val t = input.toDouble()
-        val r = if (t < 0.5) 4 * t * t * t else 1 - (-2 * t + 2).pow(3.0) / 2
-        return r.toFloat()
+        return easeCubic(input)
     }
+}
+
+/** Cubic ease-in-out utk per-hop MOVE — mirror `easeInOut` di web Board.tsx. */
+private fun easeCubic(t: Float): Float {
+    val d = t.toDouble()
+    val r = if (d < 0.5) 4 * d * d * d else 1 - (-2 * d + 2).pow(3.0) / 2
+    return r.toFloat()
 }
 
 /**
@@ -141,9 +146,17 @@ class UlarTanggaView @JvmOverloads constructor(
     private var animProgress = 0f
     private var animKind = AnimKind.NONE
     private var animator: ValueAnimator? = null
+    private var animDuration = 0L   // durasi penuh ValueAnimator (MOVE = WALK + LAND_MS)
+    private var animIsWin = false   // squash besar saat hop terakhir menang (mirror web)
 
-    private var bouncePlayer = -1
-    private var bounceProgress = 0f
+    // Landing squash & stretch (seragam dgn web): konstanta sinkron LAND_MS/DEPTH.
+    private val LAND_MS = 140L
+    private val DEPTH = 0.18f
+    private val WIN_DEPTH = 0.30f
+    private val ARC_RATIO = 0.2f    // tinggi busur hop = 0.2 × lebar kotak (web: ARC)
+    private var squashPlayer = -1
+    private var squashScaleX = 1f
+    private var squashScaleY = 1f
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -172,17 +185,23 @@ class UlarTanggaView @JvmOverloads constructor(
         rideFrom: Int,
         rideTo: Int,
         hasRide: Boolean,
+        isWin: Boolean,
         onDone: () -> Unit
     ) {
         stopAnimator()
-        animateBetween(player, from, rideFrom, AnimKind.MOVE, 550L) {
-            if (hasRide) {
+        animIsWin = isWin
+        if (hasRide) {
+            // MOVE per-hop (squash inline tiap hop), lalu RIDE slide lurus, lalu
+            // squash sekali saat mendarat tujuan tangga/ular.
+            animateBetween(player, from, rideFrom, AnimKind.MOVE, 550L) {
                 animateBetween(player, rideFrom, rideTo, AnimKind.RIDE, 700L) {
-                    bounce(player, 600L, onDone)
+                    squash(player, isWin, onDone)
                 }
-            } else {
-                bounce(player, 500L, onDone)
             }
+        } else {
+            // MOVE per-hop sudah memuat squash hop terakhir (mirror web) — onDone
+            // dipanggil setelah squash terakhir selesai di akhir MOVE.
+            animateBetween(player, from, rideFrom, AnimKind.MOVE, 550L, onDone)
         }
     }
 
@@ -191,7 +210,9 @@ class UlarTanggaView @JvmOverloads constructor(
         animator = null
         animPlayer = -1
         animKind = AnimKind.NONE
-        bouncePlayer = -1
+        squashPlayer = -1
+        squashScaleX = 1f
+        squashScaleY = 1f
     }
 
     private fun animateBetween(
@@ -207,9 +228,14 @@ class UlarTanggaView @JvmOverloads constructor(
         animTo = to
         animKind = kind
         animProgress = 0f
+        // MOVE: durasi ditambah LAND_MS agar squash hop terakhir sempat selesai
+        // (sama dgn web yg berjalan hingga sinceLand >= LAND_MS). RIDE: penuh.
+        animDuration = if (kind == AnimKind.MOVE) duration + LAND_MS else duration
         val av = ValueAnimator.ofFloat(0f, 1f).apply {
-            this.duration = duration
-            interpolator = EaseInOutInterpolator()
+            this.duration = animDuration
+            // MOVE pakai linear (progress waktu seragam) lalu ease PER-HOP saat
+            // render; RIDE pakai ease global (slide lurus). Sinkron dgn web.
+            if (kind == AnimKind.RIDE) interpolator = EaseInOutInterpolator()
             addUpdateListener {
                 animProgress = it.animatedValue as Float
                 invalidate()
@@ -226,18 +252,25 @@ class UlarTanggaView @JvmOverloads constructor(
         animator = av
     }
 
-    private fun bounce(player: Int, duration: Long, onDone: () -> Unit) {
-        bouncePlayer = player
-        bounceProgress = 0f
+    /** Landing squash & stretch (seragam dgn web): scaleY = 1 - DEPTH*(1-t)^2. */
+    private fun squash(player: Int, isWin: Boolean, onDone: () -> Unit) {
+        squashPlayer = player
+        squashScaleX = 1f
+        squashScaleY = 1f
+        val depth = if (isWin) WIN_DEPTH else DEPTH
         val av = ValueAnimator.ofFloat(0f, 1f).apply {
-            this.duration = duration
+            this.duration = LAND_MS
             addUpdateListener {
-                bounceProgress = it.animatedValue as Float
+                val t = it.animatedValue as Float
+                squashScaleY = 1f - depth * (1f - t) * (1f - t)
+                squashScaleX = 1f + depth * (1f - t) * (1f - t)
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    bouncePlayer = -1
+                    squashPlayer = -1
+                    squashScaleX = 1f
+                    squashScaleY = 1f
                     animPlayer = -1
                     animKind = AnimKind.NONE
                     invalidate()
@@ -361,11 +394,21 @@ class UlarTanggaView @JvmOverloads constructor(
             } else {
                 tokenCenterForSquare(positions[p], p, sq, ox, oy, r)
             }
-            val ty = cy + bounceOffset(p, sq)
-            canvas.drawCircle(cx, ty, r, paint)
-            canvas.drawCircle(cx, ty, r, tokenOutline)
+            val ty = cy
+            if (p == squashPlayer) {
+                // squash/stretch landing: oval dgn radius diskala, pusat tetap.
+                val rx = r * squashScaleX
+                val ry = r * squashScaleY
+                canvas.drawOval(cx - rx, ty - ry, cx + rx, ty + ry, paint)
+                canvas.drawOval(cx - rx, ty - ry, cx + rx, ty + ry, tokenOutline)
+            } else {
+                canvas.drawCircle(cx, ty, r, paint)
+                canvas.drawCircle(cx, ty, r, tokenOutline)
+            }
             if (p == currentPlayer) {
-                canvas.drawCircle(cx, ty, r + highlightPaint.strokeWidth, highlightPaint)
+                // Ring ikut bentuk token: pakai rx (diskala) saat squash, else r.
+                val ringR = if (p == squashPlayer) r * squashScaleX else r
+                canvas.drawCircle(cx, ty, ringR + highlightPaint.strokeWidth, highlightPaint)
             }
         }
     }
@@ -412,32 +455,46 @@ class UlarTanggaView @JvmOverloads constructor(
                 animProgress
             )
         } else {
-            // Walk through each square along the path, smoothly interpolating
-            // between consecutive square centers.
-            val coord = from + animProgress * (to - from)
-            val lo = minOf(from, to)
-            val hi = maxOf(from, to)
-            val a = floor(coord).toInt().coerceIn(lo, hi)
-            val b = (a + 1).coerceIn(lo, hi)
-            val frac = (coord - a).coerceIn(0f, 1f)
-            lerp(
+            // MOVE per-hop: progress waktu seragam (linear), tiap hop di-ease
+            // cubic ease-in-out sendiri + busur parabola — mirror web Board.tsx
+            // (hopIdx = floor(elapsed/hopMs); t per-hop; arc = ARC*sin(pi*t)).
+            val steps = (to - from).coerceAtLeast(1)
+            val hopMs = ((animDuration - LAND_MS).toFloat() / steps).coerceAtLeast(1f)
+            val elapsed = animProgress * animDuration
+            val hopIdx = floor(elapsed / hopMs).toInt().coerceIn(0, steps - 1)
+            val t = ((elapsed - hopIdx * hopMs) / hopMs).coerceIn(0f, 1f)
+            val e = easeCubic(t)  // ease per-hop (cubic ease-in-out), sinkron web
+            val a = from + hopIdx
+            val b = from + hopIdx + 1
+            val (bx, by) = lerp(
                 tokenCenterForSquare(a, p, sq, ox, oy, r),
                 tokenCenterForSquare(b, p, sq, ox, oy, r),
-                frac
+                e
             )
+            // Hop parabola: busur ARC_RATIO × tile, puncak di tengah hop.
+            val arcY = sq * ARC_RATIO * sin(PI * t.toDouble()).toFloat()
+
+            // Squash & stretch saat mendarat di tiap hop (mirror web :266-278).
+            val nominal = animDuration - LAND_MS
+            val done = elapsed >= nominal
+            val landings = minOf(steps, floor(elapsed / hopMs).toInt())
+            val sinceLand = elapsed - landings * hopMs
+            if (sinceLand >= 0f && sinceLand < LAND_MS) {
+                val lt = sinceLand / LAND_MS
+                val depth = if (done && animIsWin) WIN_DEPTH else DEPTH
+                val d = depth * (1f - lt) * (1f - lt)
+                squashScaleX = 1f + d
+                squashScaleY = 1f - d
+                squashPlayer = animPlayer
+            } else {
+                squashPlayer = -1
+                squashScaleX = 1f
+                squashScaleY = 1f
+            }
+            return bx to (by - arcY)
         }
     }
 
     private fun lerp(a: Pair<Float, Float>, b: Pair<Float, Float>, t: Float): Pair<Float, Float> =
         (a.first + (b.first - a.first) * t) to (a.second + (b.second - a.second) * t)
-
-    /**
-     * Vertical bounce offset for the landing token: a decaying oscillation.
-     */
-    private fun bounceOffset(p: Int, sq: Float): Float {
-        if (p != bouncePlayer) return 0f
-        val height = sq * 0.6f
-        val bounces = 2f
-        return -height * sin(bounceProgress * PI * 2.0 * bounces).toFloat() * (1f - bounceProgress)
-    }
 }
