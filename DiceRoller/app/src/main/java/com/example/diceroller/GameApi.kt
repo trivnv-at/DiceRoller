@@ -48,9 +48,31 @@ object GameApi {
         val lastRoll: LastRoll?,
     )
 
-    /** Host buat game baru. Player 1 = seat 0. */
-    fun createGame(name: String): PlayerCreds {
-        val root = JSONObject(request("POST", "/games", "{\"name\":\"${name.escapeJson()}\"}"))
+    /** Rekap akun / baris leaderboard dari backend (Postgres). */
+    data class PlayerRecord(
+        val id: String,
+        val name: String,
+        val elo: Int,
+        val points: Int,
+        val wins: Int,
+        val lastDate: String?,   // "yyyy-mm-dd" atau null
+    )
+
+    /** Baris leaderboard dengan peringkat. */
+    data class LeaderboardEntry(
+        val id: String,
+        val name: String,
+        val elo: Int,
+        val points: Int,
+        val wins: Int,
+        val lastDate: String?,
+        val rank: Int,
+    )
+
+    /** Host buat game baru. Player 1 = seat 0. accountId opsional (lapis-1). */
+    fun createGame(name: String, accountId: String? = null): PlayerCreds {
+        val acc = if (accountId != null) ",\"accountId\":\"${accountId.escapeJson()}\"" else ""
+        val root = JSONObject(request("POST", "/games", "{\"name\":\"${name.escapeJson()}\"$acc}"))
         return PlayerCreds(
             gameId = root.getString("gameId"),
             gameCode = root.getString("gameCode"),
@@ -58,6 +80,28 @@ object GameApi {
             secret = root.getString("secret"),
             seat = root.getInt("seat"),
         )
+    }
+
+    /** Get-or-create akun leaderboard (lapis-1). Kembalikan accountId. */
+    fun createPlayer(name: String): String {
+        val body = request("POST", "/players", "{\"name\":\"${name.escapeJson()}\"}")
+        return JSONObject(body).getString("playerId")
+    }
+
+    /** Rekap akun sendiri (poin/ELO/menang) dari Postgres. */
+    fun getPlayer(accountId: String): PlayerRecord {
+        val body = request("GET", "/players/$accountId", null)
+        val p = JSONObject(body).getJSONObject("player")
+        return parsePlayer(p)
+    }
+
+    /** Peringkat leaderboard (sort: "elo" | "points"). */
+    fun fetchLeaderboard(sort: String = "elo", limit: Int = 10): List<LeaderboardEntry> {
+        val body = request("GET", "/leaderboard?sort=$sort&limit=$limit", null)
+        val arr = JSONObject(body).getJSONArray("players")
+        val out = ArrayList<LeaderboardEntry>()
+        for (i in 0 until arr.length()) out.add(parseEntry(arr.getJSONObject(i)))
+        return out
     }
 
     /** Polling state game. */
@@ -153,6 +197,27 @@ object GameApi {
             lastRoll = lastRoll,
         )
     }
+
+    /** Parse objek `player` menjadi [PlayerRecord]. */
+    private fun parsePlayer(p: JSONObject): PlayerRecord = PlayerRecord(
+        id = p.getString("id"),
+        name = p.getString("name"),
+        elo = p.getInt("elo"),
+        points = p.getInt("points"),
+        wins = p.getInt("wins"),
+        lastDate = if (p.isNull("lastDate")) null else p.optString("lastDate"),
+    )
+
+    /** Parse satu baris leaderboard (memiliki `rank`). */
+    private fun parseEntry(e: JSONObject): LeaderboardEntry = LeaderboardEntry(
+        id = e.getString("id"),
+        name = e.getString("name"),
+        elo = e.getInt("elo"),
+        points = e.getInt("points"),
+        wins = e.getInt("wins"),
+        lastDate = if (e.isNull("lastDate")) null else e.optString("lastDate"),
+        rank = e.getInt("rank"),
+    )
 
     /** Escape kutip & backslash agar aman disisipkan ke JSON body. */
     private fun String.escapeJson(): String =

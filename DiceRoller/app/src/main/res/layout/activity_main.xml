@@ -55,4 +55,12 @@
         android:layout_marginTop="8dp"
         android:text="@string/roll_snakes" />
 
+    <Button
+        android:id="@+id/leaderboardButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="@string/leaderboard"
+        android:textAllCaps="false" />
+
 </LinearLayout>
