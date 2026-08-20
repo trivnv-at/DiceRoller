@@ -43,7 +43,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusTextView: TextView
     private lateinit var boardView: UlarTanggaView
     private lateinit var diceImage: ImageView
-    private lateinit var rollButton: MaterialButton
     private lateinit var lbButton: MaterialButton
     private lateinit var botButton: MaterialButton
 
@@ -88,7 +87,7 @@ class MainActivity : AppCompatActivity() {
     // Snapshot roll yang sudah dianimasikan (untuk deteksi gerakan Player 2).
     private var lastAnimatedRoll: String? = null
 
-    // Siklus random wajah dadu saat dadu berputar.
+    // Siklus random wajah dadu saat dadu berputar (gambar dadu biru).
     private val faceTick = object : Runnable {
         override fun run() {
             if (!diceAnimationRunning) return
@@ -106,18 +105,19 @@ class MainActivity : AppCompatActivity() {
         statusTextView = findViewById(R.id.statusTextView)
         boardView = findViewById(R.id.boardView)
         diceImage = findViewById(R.id.diceImage)
-        rollButton = findViewById(R.id.button)
         lbButton = findViewById(R.id.leaderboardButton)
         botButton = findViewById(R.id.botButton)
 
         boardView.positions = positions
         boardView.currentPlayer = currentPlayer
 
-        rollButton.isEnabled = false
+        setDiceEnabled(false) // menunggu / belum giliran -> dadu redup & tak bisa tap
         botButton.isEnabled = false // aktif saat game "waiting" (Player 2 belum join)
         statusTextView.text = "Menghubungkan ke server…"
 
-        rollButton.setOnClickListener {
+        // Lempar dadu dengan mengetuk dadu (bukan tombol). Saat game selesai,
+        // ketuk dadu untuk main lagi (rematch).
+        diceImage.setOnClickListener {
             if (gameOver) {
                 resetGame()
             } else {
@@ -132,12 +132,32 @@ class MainActivity : AppCompatActivity() {
         accountName = prefs.getString("name", null)
 
         if (accountId != null) {
-            // Akun sudah ada -> langsung buat game.
-            startGame()
+            // Akun sudah ada -> tanyakan mode (Host vs Web / Main vs Bot).
+            showModePicker()
         } else {
             // Belum punya akun -> minta nama dulu (lapis-1).
             showNamePrompt()
         }
+    }
+
+    /**
+     * Dialog pilihan mode saat app dibuka: Host vs Web (bagikan kode) atau
+     * Main vs Bot. Menghindari auto-host diam-diam sehingga pemain memilih
+     * mode secara eksplisit (dan tidak membuat game PvP waiting saat hanya
+     * ingin main vs Bot).
+     */
+    private fun showModePicker() {
+        val options = arrayOf(getString(R.string.mode_host_web), getString(R.string.mode_vs_bot))
+        AlertDialog.Builder(this)
+            .setTitle(R.string.mode_pick_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> startGame()
+                    1 -> startBotGame()
+                }
+            }
+            .setCancelable(false)
+            .show()
     }
 
     /** Simpan akun (lapis-1) lalu buat game sebagai Player 1. */
@@ -162,7 +182,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Main vs Bot (solo): tinggalkan game PvP yang masih menunggu Player 2,
+     * Main vs Bot: tinggalkan game PvP yang masih menunggu Player 2,
      * buat game baru dgn `vsBot:true` (server auto-join bot sebagai seat 1),
      * lalu mulai polling — bot bergerak otomatis (lazy, server-side).
      */
@@ -218,7 +238,7 @@ class MainActivity : AppCompatActivity() {
                             accountId = accId
                             accountName = name
                             prefs.edit().putString("account_id", accId).putString("name", name).apply()
-                            startGame()
+                            showModePicker()
                         }
                     } catch (e: Exception) {
                         runOnUiThread {
@@ -349,9 +369,8 @@ class MainActivity : AppCompatActivity() {
         if (view.status == "finished") {
             gameOver = true
             val winner = view.winner ?: currentPlayer
-            statusTextView.text = "Pemain ${winner + 1} (${playerNames[winner]}) MENANG!"
-            rollButton.text = getString(R.string.play_again)
-            rollButton.isEnabled = true
+            statusTextView.text = "Pemain ${winner + 1} (${playerNames[winner]}) MENANG!\nKetuk dadu untuk main lagi"
+            setDiceEnabled(true)
             SoundPlayer.win() // arpeggio menang + getar panjang
             SoundPlayer.vibrateWin()
             refreshOwnStats()
@@ -359,8 +378,8 @@ class MainActivity : AppCompatActivity() {
             gameOver = false
             if (view.status == "waiting") {
                 statusTextView.text = "Kode Game: ${creds?.gameCode}\nTunggu Player 2 join di web…"
-                rollButton.isEnabled = false
-                // Belum ada Player 2 -> boleh beralih ke "Main vs Bot" (solo).
+                setDiceEnabled(false)
+                // Belum ada Player 2 -> boleh beralih ke "Main vs Bot".
                 botButton.isEnabled = true
             } else {
                 updateTurnStatus(view)
@@ -370,13 +389,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Teks giliran + enabled state tombol roll. */
+    /** Aktifkan/nonaktifkan tap dadu + visual (redup saat nonaktif). */
+    private fun setDiceEnabled(enabled: Boolean) {
+        diceImage.isEnabled = enabled
+        diceImage.alpha = if (enabled) 1f else 0.4f
+    }
+
+    /** Teks giliran + enabled state dadu (pengganti tombol roll). */
     private fun updateTurnStatus(view: GameApi.GameView) {
         val mine = creds?.seat == view.currentPlayer
         statusTextView.text = "Giliran Pemain ${view.currentPlayer + 1} (${playerNames[view.currentPlayer]})." +
-            if (mine) " Lempar dadu!" else " Tunggu Player ${view.currentPlayer + 1}…"
-        // Roll hanya aktif saat giliran kita (Player 1 host) & tidak ada animasi.
-        rollButton.isEnabled = mine && !tokenAnimating
+            if (mine) " Ketuk dadu!" else " Tunggu Player ${view.currentPlayer + 1}…"
+        // Dadu hanya bisa di-tap saat giliran kita (Player 1 host) & tidak ada animasi.
+        setDiceEnabled(mine && !tokenAnimating)
     }
 
     /**
@@ -437,7 +462,7 @@ class MainActivity : AppCompatActivity() {
         val c = creds ?: return
         if (networkingActive || tokenAnimating || gameOver) return
         networkingActive = true
-        rollButton.isEnabled = false
+        // Dadu tetap terang saat berputar; re-entry dicegah guard networkingActive.
         thread {
             try {
                 val view = GameApi.roll(c)
@@ -501,7 +526,6 @@ class MainActivity : AppCompatActivity() {
         val c = creds ?: return
         if (networkingActive) return
         networkingActive = true
-        rollButton.isEnabled = false
         thread {
             try {
                 val view = GameApi.reset(c)
@@ -537,9 +561,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Animate the dice "rolling": spins a full turn while cycling random faces,
-     * then settles on [roll] (nilai dari server). [onDone] dipanggil saat dadu
-     * berhenti (setelah wajah akhir tampil).
+     * Animate the dice "rolling": berputar satu putaran sambil siklus gambar
+     * dadu biru acak, lalu berhenti di [roll] (nilai dari server). [onDone]
+     * dipanggil saat dadu berhenti (setelah wajah akhir tampil).
      */
     private fun showDice(roll: Int, onDone: () -> Unit = {}) {
         diceImage.removeCallbacks(faceTick)
@@ -564,7 +588,7 @@ class MainActivity : AppCompatActivity() {
             .start()
     }
 
-    /** Map a dice roll (1..6) to its drawable resource. */
+    /** Map a dice roll (1..6) to its drawable resource (gambar dadu biru). */
     private fun drawableFor(roll: Int): Int {
         return when (roll) {
             1 -> R.drawable.dice_1

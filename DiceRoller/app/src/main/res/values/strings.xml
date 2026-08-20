@@ -19,7 +19,10 @@
     <string name="roll_snakes">Lempar Dadu</string>
     <string name="play_again">Main Lagi</string>
     <string name="leaderboard">🏆 Lihat Leaderboard</string>
-    <string name="vs_bot">🤖 Main vs Bot (solo)</string>
+    <string name="vs_bot">🤖 Main vs Bot</string>
+    <string name="mode_pick_title">Pilih mode permainan</string>
+    <string name="mode_host_web">🌐 Host — main vs Web (bagikan kode)</string>
+    <string name="mode_vs_bot">🤖 Main vs Bot</string>
     <string name="lb_title">🏆 Leaderboard</string>
     <string name="lb_rank">#</string>
     <string name="lb_name">Nama</string>
