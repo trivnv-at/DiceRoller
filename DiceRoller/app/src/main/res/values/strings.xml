@@ -20,6 +20,7 @@
     <string name="play_again">Main Lagi</string>
     <string name="leaderboard">🏆 Lihat Leaderboard</string>
     <string name="vs_bot">🤖 Main vs Bot</string>
+    <string name="menu">☰</string>
     <string name="mode_pick_title">Pilih mode permainan</string>
     <string name="mode_host_web">🌐 Host — main vs Web (bagikan kode)</string>
     <string name="mode_vs_bot">🤖 Main vs Bot</string>

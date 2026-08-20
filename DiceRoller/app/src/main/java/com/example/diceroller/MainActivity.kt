@@ -27,6 +27,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import com.google.android.material.button.MaterialButton
 import kotlin.concurrent.thread
 
@@ -44,8 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusTextView: TextView
     private lateinit var boardView: UlarTanggaView
     private lateinit var diceImage: ImageView
-    private lateinit var lbButton: MaterialButton
-    private lateinit var botButton: MaterialButton
+    private lateinit var menuButton: MaterialButton
+    // Boleh beralih ke "Main vs Bot" hanya saat game berstatus waiting (Player 2 belum join).
+    private var botAvailable = false
 
     private val playerNames = listOf("Merah", "Biru")
 
@@ -108,14 +110,13 @@ class MainActivity : AppCompatActivity() {
         statusTextView = findViewById(R.id.statusTextView)
         boardView = findViewById(R.id.boardView)
         diceImage = findViewById(R.id.diceImage)
-        lbButton = findViewById(R.id.leaderboardButton)
-        botButton = findViewById(R.id.botButton)
+        menuButton = findViewById(R.id.menuButton)
 
         boardView.positions = positions
         boardView.currentPlayer = currentPlayer
 
         setDiceEnabled(false) // menunggu / belum giliran -> dadu redup & tak bisa tap
-        botButton.isEnabled = false // aktif saat game "waiting" (Player 2 belum join)
+        botAvailable = false // aktif saat game "waiting" (Player 2 belum join)
         statusTextView.text = "Menghubungkan ke server…"
 
         // Lempar dadu dengan mengetuk dadu (bukan tombol). Saat game selesai,
@@ -127,8 +128,7 @@ class MainActivity : AppCompatActivity() {
                 handleRoll()
             }
         }
-        lbButton.setOnClickListener { showLeaderboard() }
-        botButton.setOnClickListener { startBotGame() }
+        menuButton.setOnClickListener { showMenu() }
 
         // Lapis-1: muat akun dari SharedPreferences.
         accountId = prefs.getString("account_id", null)
@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         lastAnimatedRoll = null
         pendingSeat = -1
         gameOver = false
-        botButton.isEnabled = false
+        botAvailable = false
         statusTextView.text = "Menyiapkan lawan Bot…"
         networkingActive = true
         val name = accountName ?: "Player"
@@ -251,6 +251,27 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    /** Buka menu dropdown kanan atas (☰): Leaderboard & Main vs Bot. */
+    private fun showMenu() {
+        val popup = PopupMenu(this, menuButton)
+        popup.menuInflater.inflate(R.menu.menu_main, popup.menu)
+        popup.menu.findItem(R.id.action_bot).isEnabled = botAvailable
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_leaderboard -> {
+                    showLeaderboard()
+                    true
+                }
+                R.id.action_bot -> {
+                    startBotGame()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
     }
 
     /** Tampilkan leaderboard dari server; fallback ke cache lokal (lapis-1). */
@@ -393,11 +414,11 @@ class MainActivity : AppCompatActivity() {
                 statusTextView.text = "Kode Game: ${creds?.gameCode}\nTunggu Player 2 join di web…"
                 setDiceEnabled(false)
                 // Belum ada Player 2 -> boleh beralih ke "Main vs Bot".
-                botButton.isEnabled = true
+                botAvailable = true
             } else {
                 updateTurnStatus(view)
                 // Game sedang/sudah dimainkan -> jangan biarkan beralih ke bot.
-                botButton.isEnabled = false
+                botAvailable = false
             }
         }
     }

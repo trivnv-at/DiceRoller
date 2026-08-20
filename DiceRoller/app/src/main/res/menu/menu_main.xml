@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Menu dropdown kanan atas (☰): Leaderboard & Main vs Bot. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_leaderboard"
+        android:title="@string/leaderboard" />
+    <item
+        android:id="@+id/action_bot"
+        android:title="@string/vs_bot" />
+</menu>

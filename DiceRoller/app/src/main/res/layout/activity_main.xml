@@ -1,91 +1,94 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Layout of the Snakes and Ladders game (Material 3) -->
-<LinearLayout
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
     android:background="?attr/colorSurface"
-    android:padding="12dp"
     tools:context=".MainActivity">
 
-    <TextView
-        android:id="@+id/statusTextView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="4dp"
-        android:background="?attr/colorSurfaceVariant"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="6dp"
-        android:gravity="center"
-        android:text="@string/turn_start"
-        android:textColor="?attr/colorOnSurface"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <com.google.android.material.card.MaterialCardView
+    <!-- Konten utama (status → board → dadu). -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="6dp"
-        app:cardCornerRadius="20dp"
-        app:cardElevation="4dp"
-        app:cardBackgroundColor="?attr/colorSurfaceVariant"
-        app:cardPreventCornerOverlap="true">
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="12dp">
 
-        <com.example.diceroller.UlarTanggaView
-            android:id="@+id/boardView"
+        <TextView
+            android:id="@+id/statusTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="4dp"
+            android:background="?attr/colorSurfaceVariant"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="6dp"
+            android:gravity="center"
+            android:text="@string/turn_start"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="8dp" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="6dp"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardPreventCornerOverlap="true">
 
-    </com.google.android.material.card.MaterialCardView>
+            <com.example.diceroller.UlarTanggaView
+                android:id="@+id/boardView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="96dp"
-        android:layout_height="96dp"
-        android:layout_marginTop="10dp"
-        app:cardCornerRadius="20dp"
-        app:cardElevation="2dp"
-        app:cardBackgroundColor="?attr/colorSurfaceVariant"
-        app:strokeColor="?attr/colorOutline"
-        app:strokeWidth="1dp">
+        </com.google.android.material.card.MaterialCardView>
 
-        <ImageView
-            android:id="@+id/diceImage"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:layout_gravity="center"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="@string/dice"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            tools:srcCompat="@drawable/dice_1" />
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:layout_marginTop="10dp"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:strokeColor="?attr/colorOutline"
+            app:strokeWidth="1dp">
 
-    </com.google.android.material.card.MaterialCardView>
+            <ImageView
+                android:id="@+id/diceImage"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/dice"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                tools:srcCompat="@drawable/dice_1" />
 
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+
+    <!-- Menu hamburger ☰ di kanan atas — membuka PopupMenu (Leaderboard / Main vs Bot). -->
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/leaderboardButton"
+        android:id="@+id/menuButton"
         style="@style/Widget.Material3.Button.TonalButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/leaderboard"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="6dp"
+        android:minWidth="0dp"
+        android:padding="0dp"
+        android:text="@string/menu"
+        android:textSize="22sp"
         android:textAllCaps="false"
         app:cornerRadius="24dp" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/botButton"
-        style="@style/Widget.Material3.Button.TonalButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/vs_bot"
-        android:textAllCaps="false"
-        app:cornerRadius="24dp" />
-
-</LinearLayout>
+</FrameLayout>
