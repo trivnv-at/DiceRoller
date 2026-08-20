@@ -446,7 +446,10 @@ class MainActivity : AppCompatActivity() {
         val lr = view.lastRoll ?: return
         val mySeat = creds?.seat ?: return
         if (lr.seat == mySeat) return // gerakan kita ditangani handleRoll()
-        val key = "${lr.seat}:${lr.from}:${lr.to}"
+        // Sertakan `value`: roll yang TIDAK menggerakkan token (from==to, mis. overshoot >100)
+        // bisa berbagi key seat:from:to padahal nilai dadu beda — tanpanya dadu tak di-update
+        // ke nilai baru (stale), jadi gambar dadu tak cocok dgn nilai yang diperoleh.
+        val key = "${lr.seat}:${lr.from}:${lr.to}:${lr.value}"
         if (key == lastAnimatedRoll) return
         lastAnimatedRoll = key
         Log.d(TAG, "remote move seat=${lr.seat} ${lr.from}->${lr.to}")
@@ -504,7 +507,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     val lr = view.lastRoll
                     if (lr != null) Log.d(TAG, "roll seat=${lr.seat} value=${lr.value} ${lr.from}->${lr.to}")
-                    lastAnimatedRoll = if (lr != null) "${lr.seat}:${lr.from}:${lr.to}" else null
+                    lastAnimatedRoll = if (lr != null) "${lr.seat}:${lr.from}:${lr.to}:${lr.value}" else null
                     applyDelayedMove(view, lr)
                 }
             } catch (e: Exception) {
