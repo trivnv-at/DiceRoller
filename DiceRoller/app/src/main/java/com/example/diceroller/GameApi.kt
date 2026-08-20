@@ -1,9 +1,13 @@
 package com.example.diceroller
 
+import android.util.Log
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.net.HttpURLConnection
 import java.net.URL
+
+/** Tag logcat bersama (dipakai GameApi & MainActivity). */
+const val TAG = "DiceRoller"
 
 /**
  * Client HTTP ke backend ular-tangga (server-authoritative).
@@ -152,6 +156,7 @@ object GameApi {
         jsonBody: String?,
         headers: Map<String, String> = emptyMap(),
     ): String {
+        Log.d(TAG, "req $method $path")
         val conn = URL(BASE + path).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
@@ -170,9 +175,16 @@ object GameApi {
             val text = stream?.bufferedReader()?.use(BufferedReader::readText) ?: ""
 
             if (code !in 200..299) {
+                Log.w(TAG, "res $method $path -> $code ${text.take(80)}")
                 throw RuntimeException("HTTP $code $path: $text")
             }
+            Log.d(TAG, "res $method $path -> $code")
             return text
+        } catch (e: RuntimeException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "req failed $method $path: ${e.message}")
+            throw e
         } finally {
             conn.disconnect()
         }

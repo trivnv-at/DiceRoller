@@ -20,6 +20,7 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.ImageView
@@ -86,6 +87,8 @@ class MainActivity : AppCompatActivity() {
 
     // Snapshot roll yang sudah dianimasikan (untuk deteksi gerakan Player 2).
     private var lastAnimatedRoll: String? = null
+    // Kunci transisi state terakhir — hanya log saat state berubah (bukan tiap poll).
+    private var lastStateKey: String? = null
 
     // Siklus random wajah dadu saat dadu berputar (gambar dadu biru).
     private val faceTick = object : Runnable {
@@ -314,6 +317,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         polling = false
         handler.removeCallbacksAndMessages(null)
+        Log.d(TAG, "onDestroy polling stopped")
     }
 
     /** Mulai loop polling state server. */
@@ -341,8 +345,9 @@ class MainActivity : AppCompatActivity() {
                     animateRemoteMove(view)
                     applyServerState(view)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 // Polling boleh gagal sesaat (server restart dsb); coba lagi nanti.
+                Log.w(TAG, "poll failed: ${e.message}")
             } finally {
                 networkingActive = false
             }
@@ -355,6 +360,13 @@ class MainActivity : AppCompatActivity() {
     private fun applyServerState(view: GameApi.GameView) {
         positions = view.positions
         currentPlayer = view.currentPlayer
+        // Log transisi state (status/turn/posisi/winner) hanya saat berubah,
+        // supaya polling 0,5s tidak membanjiri logcat.
+        val key = "${view.status}|${view.currentPlayer}|${view.winner}|${view.positions[0]}-${view.positions[1]}"
+        if (key != lastStateKey) {
+            lastStateKey = key
+            Log.d(TAG, "state $key")
+        }
         // Selama ada roll yang belum dianimasikan, tahan token pemain itu di
         // posisi asal (from) — jangan biarkan polling langsung menaruhnya di
         // posisi akhir (yang memicu "teleport" di awal perpindahan).
@@ -369,6 +381,7 @@ class MainActivity : AppCompatActivity() {
         if (view.status == "finished") {
             gameOver = true
             val winner = view.winner ?: currentPlayer
+            Log.i(TAG, "game finished winner=$winner")
             statusTextView.text = "Pemain ${winner + 1} (${playerNames[winner]}) MENANG!\nKetuk dadu untuk main lagi"
             setDiceEnabled(true)
             SoundPlayer.win() // arpeggio menang + getar panjang
@@ -415,6 +428,7 @@ class MainActivity : AppCompatActivity() {
         val key = "${lr.seat}:${lr.from}:${lr.to}"
         if (key == lastAnimatedRoll) return
         lastAnimatedRoll = key
+        Log.d(TAG, "remote move seat=${lr.seat} ${lr.from}->${lr.to}")
 
         // Dadu dulu, lalu token bergerak setelah dadu berhenti + 0,5s.
         applyDelayedMove(view, lr)
@@ -468,6 +482,7 @@ class MainActivity : AppCompatActivity() {
                 val view = GameApi.roll(c)
                 runOnUiThread {
                     val lr = view.lastRoll
+                    if (lr != null) Log.d(TAG, "roll seat=${lr.seat} value=${lr.value} ${lr.from}->${lr.to}")
                     lastAnimatedRoll = if (lr != null) "${lr.seat}:${lr.from}:${lr.to}" else null
                     applyDelayedMove(view, lr)
                 }
@@ -532,6 +547,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     lastAnimatedRoll = null
                     gameOver = false
+                    Log.d(TAG, "game reset")
                     applyServerState(view)
                 }
             } catch (e: Exception) {
