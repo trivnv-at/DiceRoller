@@ -19,6 +19,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -69,16 +70,21 @@ class UlarTanggaView @JvmOverloads constructor(
      */
     companion object {
         val LADDERS = mapOf(
-            1 to 38, 4 to 14, 9 to 31, 21 to 42, 28 to 84,
-            36 to 44, 51 to 67, 71 to 91, 80 to 100
+            2 to 38, 7 to 14, 8 to 31, 15 to 26, 21 to 42,
+            28 to 84, 36 to 44, 51 to 67, 71 to 91, 78 to 98, 87 to 94
         )
 
         /**
          * Landing on the head of a snake slides down to its tail.
          */
         val SNAKES = mapOf(
-            16 to 6, 47 to 26, 49 to 11, 56 to 53, 62 to 19,
-            64 to 60, 87 to 24, 93 to 73, 95 to 75, 98 to 78
+            16 to 6, 46 to 25, 49 to 11, 62 to 19, 64 to 60,
+            74 to 53, 89 to 68, 92 to 88, 95 to 75, 99 to 80
+        )
+
+        /** Warna badan ular (board.html): hijau, merah, ungu, pink. */
+        val SNAKE_COLORS = intArrayOf(
+            0xFF80C040.toInt(), 0xFFD43A2F.toInt(), 0xFF9070B0.toInt(), 0xFFF06A9A.toInt()
         )
     }
 
@@ -116,6 +122,19 @@ class UlarTanggaView @JvmOverloads constructor(
     private val snakeHeadOutline = Paint().apply { style = Paint.Style.STROKE }
     private val snakeEyeWhitePaint = Paint().apply { style = Paint.Style.FILL; color = Color.WHITE }
     private val snakeEyePupilPaint = Paint().apply { style = Paint.Style.FILL; color = Color.rgb(26, 10, 10) }
+    // Paint gaya board.html (flat 2-stroke): outline hitam badan ular + lidah + outline tangga.
+    private val snakeOutlinePaint = Paint().apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFF100000.toInt()
+    }
+    private val snakeTonguePaint = Paint().apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFFE2553F.toInt()
+    }
+    private val ladderRailOutline = Paint().apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFF6B4528.toInt()
+    }
+    private val ladderRungOutline = Paint().apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFFB8860B.toInt()
+    }
     private val playerPaints = listOf(
         Paint().apply { style = Paint.Style.FILL }, // player 1 (error)
         Paint().apply { style = Paint.Style.FILL }  // player 2 (primary)
@@ -130,18 +149,11 @@ class UlarTanggaView @JvmOverloads constructor(
     // Warna role hasil resolve (dipakai di onDraw).
     private var cellFillAColor = 0
     private var cellFillBColor = 0
-    private var startGoalColor = 0
+    private var startCellColor = 0xFF3FAE5A.toInt() // sel 1 (hijau)
+    private var goalCellColor = 0xFFF2A63C.toInt() // sel 100 (emas)
     private var boardPanelColor = 0
     private var boardPanelGradEnd = 0
     private var lastDrawW = -1
-
-    // Shader gradien 3D (tangga kayu & ular) — dibangun ulang saat ukuran berubah.
-    private var shaderBuiltForW = -1
-    private var ladderRailShaders: List<Shader> = emptyList()
-    private var ladderRungShaders: List<Shader> = emptyList()
-    private var snakeBodyShaders: List<Shader> = emptyList()
-    private var snakeHeadCenter: List<FloatArray> = emptyList()
-    private var snakeHeadAngle: List<Double> = emptyList()
 
     // Radius sudut sel rounded (fraksi lebar sel) — redesign.
     private val cornerRadiusRatio = 0.12f
@@ -170,14 +182,26 @@ class UlarTanggaView @JvmOverloads constructor(
         playerPaints[1].color = ta.getColor(6, fb)
         tokenOutline.color = ta.getColor(7, fb)
         highlightPaint.color = ta.getColor(6, fb)
-        startGoalColor = ta.getColor(8, fb)
         boardPanelColor = ta.getColor(9, fb)
         ta.recycle()
 
+        // Gaya board.html: sel putih/krem (light) / gelap (dark), angka & grid ikut tema.
+        val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        if (night) {
+            cellFillAColor = 0xFF10151F.toInt()
+            cellFillBColor = 0xFF1A2230.toInt()
+            numberPaint.color = 0xFFAEB7C5.toInt()
+            gridPaint.color = 0x12FFFFFF.toInt()
+        } else {
+            cellFillAColor = 0xFFFFFFFF.toInt()
+            cellFillBColor = 0xFFFAF5EA.toInt()
+            numberPaint.color = 0xFF9A7B55.toInt()
+            gridPaint.color = 0xFFEEE7D6.toInt()
+        }
+        snakeHeadOutline.color = 0xFF100000.toInt() // outline kepala ular = hitam (board.html)
+
         // Turunan translusen utk depth/shadow/gloss.
-        ladderShadowPaint.color = Color.argb(90, 0, 0, 0) // drop shadow tangga kayu
-        snakeShadowPaint.color = Color.argb(110, 0, 0, 0) // drop shadow ular
-        snakeHeadOutline.color = tokenOutline.color // outline kepala = warna permukaan
         tokenShadowPaint.color = Color.argb(90, 0, 0, 0)
         tokenGlossPaint.color = Color.argb(100, 255, 255, 255)
         highlightHaloPaint.color = withAlpha(highlightPaint.color, 0.25f)
@@ -409,9 +433,10 @@ class UlarTanggaView @JvmOverloads constructor(
                 val top = oy + row * sq
                 val squareNumber = squareNumberAt(row, col)
                 cellFillPaint.color = when {
-                    squareNumber == 1 || squareNumber == 100 -> startGoalColor
-                    (row + col) % 2 == 0 -> cellFillAColor
-                    else -> cellFillBColor
+                    squareNumber == 1 -> startCellColor // sel 1 (hijau)
+                    squareNumber == 100 -> goalCellColor // sel 100 (emas)
+                    squareNumber % 2 == 0 -> cellFillBColor
+                    else -> cellFillAColor
                 }
                 canvas.drawRoundRect(left, top, left + sq, top + sq, corner, corner, cellFillPaint)
                 canvas.drawRoundRect(left, top, left + sq, top + sq, corner, corner, gridPaint)
@@ -451,148 +476,78 @@ class UlarTanggaView @JvmOverloads constructor(
     }
 
     /**
-     * Draw the snakes as red curved lines from head to tail.
+     * Draw the snakes in the board.html style: colored curved bodies with a dark
+     * outline, round head with black eyes and a red forked tongue.
      */
-    /** Bangun ulang shader gradien 3D (kayu & ular) saat ukuran papan berubah. */
-    private fun ensureSnakeLadderShaders(sq: Float, ox: Float, oy: Float) {
-        if (shaderBuiltForW == width) return
-        shaderBuiltForW = width
-
-        fun cylinderShader(
-            x1: Float, y1: Float, x2: Float, y2: Float, w: Float,
-            light: Int, mid: Int, dark: Int
-        ): LinearGradient {
-            val dx = x2 - x1
-            val dy = y2 - y1
-            val len = hypot(dx, dy).toFloat().coerceAtLeast(1f)
-            val px = -dy / len * (w / 2f)
-            val py = dx / len * (w / 2f)
-            val cx = (x1 + x2) / 2f
-            val cy = (y1 + y2) / 2f
-            return LinearGradient(
-                cx - px, cy - py, cx + px, cy + py,
-                intArrayOf(light, mid, dark), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
-            )
-        }
-
-        // Warna kayu tangga (fixed; kayu bukan role tema).
-        val woodLight = 0xFFF2CC8E.toInt()
-        val woodMid = 0xFFCF9242.toInt()
-        val woodDark = 0xFF8A5A22.toInt()
-
-        // Tangga: rel + anak tangga, tiap elemen gradien silinder tegak-lurus arahnya.
-        ladderRailShaders = emptyList()
-        ladderRungShaders = emptyList()
-        for ((bottom, top) in LADDERS) {
-            val (bx, by) = squareCenter(bottom, sq, ox, oy)
-            val (tx, ty) = squareCenter(top, sq, ox, oy)
-            val dx = tx - bx
-            val dy = ty - by
-            val len = hypot(dx, dy).toFloat().coerceAtLeast(1f)
-            val px = -dy / len * sq * 0.18f
-            val py = dx / len * sq * 0.18f
-            ladderRailShaders = ladderRailShaders + listOf(
-                cylinderShader(bx + px, by + py, tx + px, ty + py, sq * 0.2f, woodLight, woodMid, woodDark),
-                cylinderShader(bx - px, by - py, tx - px, ty - py, sq * 0.2f, woodLight, woodMid, woodDark),
-            )
-            for (i in 1 until 4) {
-                val f = i.toFloat() / 4f
-                val rx = bx + (tx - bx) * f
-                val ry = by + (ty - by) * f
-                ladderRungShaders = ladderRungShaders + cylinderShader(
-                    rx + px, ry + py, rx - px, ry - py, sq * 0.16f, woodLight, woodMid, woodDark
-                )
-            }
-        }
-
-        // Ular: badan gradien error (tepi terang/tergelap), kepala + arah utk mata.
-        val err = snakePaint.color
-        val snakeLight = lerp(err, Color.WHITE, 0.60f)
-        val snakeDark = lerp(err, Color.BLACK, 0.58f)
-        snakeBodyShaders = emptyList()
-        snakeHeadCenter = emptyList()
-        snakeHeadAngle = emptyList()
-        for ((head, tail) in SNAKES) {
-            val (hx, hy) = squareCenter(head, sq, ox, oy)
-            val (tx, ty) = squareCenter(tail, sq, ox, oy)
-            snakeBodyShaders = snakeBodyShaders + cylinderShader(hx, hy, tx, ty, sq * 0.34f, snakeLight, err, snakeDark)
-            val mx = (hx + tx) / 2f + (ty - hy) * 0.2f
-            val my = (hy + ty) / 2f - (tx - hx) * 0.2f
-            snakeHeadCenter = snakeHeadCenter + listOf(floatArrayOf(hx, hy))
-            snakeHeadAngle = snakeHeadAngle + Math.atan2((my - hy).toDouble(), (mx - hx).toDouble())
-        }
-    }
-
     private fun drawSnakes(canvas: Canvas, sq: Float, ox: Float, oy: Float) {
-        ensureSnakeLadderShaders(sq, ox, oy)
-        val bodyW = sq * 0.34f
+        val bodyW = sq * 0.32f
         snakeBodyPaint.strokeWidth = bodyW
-        snakeGlossPaint.strokeWidth = bodyW * 0.32f
-        snakeGlossPaint.color = Color.argb(80, 255, 255, 255)
-        snakeHeadOutline.strokeWidth = sq * 0.035f
+        snakeOutlinePaint.strokeWidth = sq * 0.46f
+        snakeHeadOutline.strokeWidth = sq * 0.1f
         var si = 0
         for ((head, tail) in SNAKES) {
             val (hx, hy) = squareCenter(head, sq, ox, oy)
             val (tx, ty) = squareCenter(tail, sq, ox, oy)
-            val path = Path().apply {
-                moveTo(hx, hy)
-                // Control point offset perpendicular to the head->tail line for a curve.
-                val dx = tx - hx
-                val dy = ty - hy
-                val midX = (hx + tx) / 2f + dy * 0.2f
-                val midY = (hy + ty) / 2f - dx * 0.2f
-                quadTo(midX, midY, tx, ty)
-            }
-            // Drop shadow lembut (offset ke bawah) + gloss di tepi terang gradien.
-            snakeShadowPaint.strokeWidth = bodyW + sq * 0.06f
-            canvas.save()
-            canvas.translate(0f, sq * 0.04f)
-            canvas.drawPath(path, snakeShadowPaint)
-            canvas.restore()
-
-            snakeBodyPaint.shader = snakeBodyShaders[si]
-            canvas.drawPath(path, snakeBodyPaint)
-
             val dx = tx - hx
             val dy = ty - hy
-            val len = hypot(dx, dy).toFloat().coerceAtLeast(1f)
-            val npx = -dy / len * (bodyW / 2f)
-            val npy = dx / len * (bodyW / 2f)
-            canvas.save()
-            canvas.translate(-npx * 0.45f, -npy * 0.45f)
-            canvas.drawPath(path, snakeGlossPaint)
-            canvas.restore()
+            val midX = (hx + tx) / 2f + dy * 0.2f
+            val midY = (hy + ty) / 2f - dx * 0.2f
+            val path = Path().apply { moveTo(hx, hy); quadTo(midX, midY, tx, ty) }
 
-            // Kepala (bulat, gradien sama) + outline + mata.
-            val hc = snakeHeadCenter[si]
-            snakeHeadPaint.shader = snakeBodyShaders[si]
-            canvas.drawCircle(hc[0], hc[1], sq * 0.2f, snakeHeadPaint)
-            canvas.drawCircle(hc[0], hc[1], sq * 0.2f, snakeHeadOutline)
-            val ang = snakeHeadAngle[si]
+            // Badan: outline hitam tebal di bawah, warna di atas.
+            canvas.drawPath(path, snakeOutlinePaint)
+            val col = SNAKE_COLORS[si % SNAKE_COLORS.size]
+            snakeBodyPaint.color = col
+            canvas.drawPath(path, snakeBodyPaint)
+
+            // Kepala bulat (warna sama) + outline hitam.
+            val ang = Math.atan2((midY - hy).toDouble(), (midX - hx).toDouble())
             val cos = Math.cos(ang).toFloat()
             val sin = Math.sin(ang).toFloat()
-            val exo = sq * 0.06f * cos
-            val eyo = sq * 0.06f * sin
-            val eyeOff = sq * 0.055f
-            val er = sq * 0.03f
-            val pr = sq * 0.014f
-            canvas.drawCircle(hc[0] + exo, hc[1] + eyo - eyeOff, er, snakeEyeWhitePaint)
-            canvas.drawCircle(hc[0] + exo, hc[1] + eyo + eyeOff, er, snakeEyeWhitePaint)
-            canvas.drawCircle(hc[0] + exo * 1.5f, hc[1] + eyo * 1.5f - eyeOff, pr, snakeEyePupilPaint)
-            canvas.drawCircle(hc[0] + exo * 1.5f, hc[1] + eyo * 1.5f + eyeOff, pr, snakeEyePupilPaint)
+            val headR = sq * 0.3f
+            snakeHeadPaint.color = col
+            canvas.drawCircle(hx, hy, headR, snakeHeadPaint)
+            canvas.drawCircle(hx, hy, headR, snakeHeadOutline)
+
+            // Lidah bercabang merah dari ujung kepala.
+            val lx = hx + cos * sq * 0.4f
+            val ly = hy + sin * sq * 0.4f
+            val b1x = cos * sq * 0.14f + Math.cos(ang + 0.5).toFloat() * sq * 0.1f
+            val b1y = sin * sq * 0.14f + Math.sin(ang + 0.5).toFloat() * sq * 0.1f
+            val b2x = cos * sq * 0.14f + Math.cos(ang - 0.5).toFloat() * sq * 0.1f
+            val b2y = sin * sq * 0.14f + Math.sin(ang - 0.5).toFloat() * sq * 0.1f
+            snakeTonguePaint.strokeWidth = sq * 0.08f
+            canvas.drawLine(lx, ly, lx + b1x, ly + b1y, snakeTonguePaint)
+            canvas.drawLine(lx, ly, lx + b2x, ly + b2y, snakeTonguePaint)
+
+            // Mata (2 titik hitam).
+            val er = sq * 0.07f
+            snakeEyePupilPaint.color = 0xFF100000.toInt()
+            canvas.drawCircle(
+                hx + Math.cos(ang + 0.5).toFloat() * sq * 0.13f,
+                hy + Math.sin(ang + 0.5).toFloat() * sq * 0.13f, er, snakeEyePupilPaint
+            )
+            canvas.drawCircle(
+                hx + Math.cos(ang - 0.5).toFloat() * sq * 0.13f,
+                hy + Math.sin(ang - 0.5).toFloat() * sq * 0.13f, er, snakeEyePupilPaint
+            )
             si++
         }
     }
 
     /**
-     * Draw the ladders as wood rails with rungs, cylinder-shaded + drop shadow.
+     * Draw the ladders in the board.html style: flat brown rails + gold rungs,
+     * each with a dark outline (2-stroke, no cylinder shading).
      */
     private fun drawLadders(canvas: Canvas, sq: Float, ox: Float, oy: Float) {
-        ensureSnakeLadderShaders(sq, ox, oy)
-        val railW = sq * 0.2f
-        val rungW = sq * 0.16f
-        var rail = 0
-        var rung = 0
+        val railW = sq * 0.17f
+        ladderRailPaint.strokeWidth = railW
+        ladderRailPaint.color = 0xFFA57949.toInt()
+        ladderRailOutline.strokeWidth = sq * 0.29f
+        val rungW = sq * 0.15f
+        ladderRungPaint.strokeWidth = rungW
+        ladderRungPaint.color = 0xFFF0C000.toInt()
+        ladderRungOutline.strokeWidth = sq * 0.26f
         for ((bottom, top) in LADDERS) {
             val (bx, by) = squareCenter(bottom, sq, ox, oy)
             val (tx, ty) = squareCenter(top, sq, ox, oy)
@@ -603,27 +558,18 @@ class UlarTanggaView @JvmOverloads constructor(
             val px = -dy / len * sq * 0.18f
             val py = dx / len * sq * 0.18f
 
-            // Drop shadow rel (offset ke bawah).
-            ladderShadowPaint.strokeWidth = railW + sq * 0.08f
-            canvas.drawLine(bx + px, by + py + sq * 0.04f, tx + px, ty + py + sq * 0.04f, ladderShadowPaint)
-            canvas.drawLine(bx - px, by - py + sq * 0.04f, tx - px, ty - py + sq * 0.04f, ladderShadowPaint)
-
-            // Rel (gradien silinder kayu).
-            ladderRailPaint.strokeWidth = railW
-            ladderRailPaint.shader = ladderRailShaders[rail++]
+            // Rel: outline coklat tua di bawah, isi coklat di atas.
+            canvas.drawLine(bx + px, by + py, tx + px, ty + py, ladderRailOutline)
             canvas.drawLine(bx + px, by + py, tx + px, ty + py, ladderRailPaint)
-            ladderRailPaint.shader = ladderRailShaders[rail++]
+            canvas.drawLine(bx - px, by - py, tx - px, ty - py, ladderRailOutline)
             canvas.drawLine(bx - px, by - py, tx - px, ty - py, ladderRailPaint)
 
-            // Anak tangga (gradien silinder, drop shadow kecil).
-            ladderRungPaint.strokeWidth = rungW
-            ladderShadowPaint.strokeWidth = rungW + sq * 0.04f
+            // Anak tangga: outline emas gelap di bawah, isi emas di atas.
             for (i in 1 until 4) {
                 val f = i.toFloat() / 4f
                 val rx = bx + (tx - bx) * f
                 val ry = by + (ty - by) * f
-                canvas.drawLine(rx + px, ry + py + sq * 0.02f, rx - px, ry - py + sq * 0.02f, ladderShadowPaint)
-                ladderRungPaint.shader = ladderRungShaders[rung++]
+                canvas.drawLine(rx + px, ry + py, rx - px, ry - py, ladderRungOutline)
                 canvas.drawLine(rx + px, ry + py, rx - px, ry - py, ladderRungPaint)
             }
         }
