@@ -69,6 +69,7 @@ object GameApi {
         val elo: Int,
         val points: Int,
         val wins: Int,
+        val games: Int,
         val lastDate: String?,
         val rank: Int,
     )
@@ -232,6 +233,7 @@ object GameApi {
         elo = e.getInt("elo"),
         points = e.getInt("points"),
         wins = e.getInt("wins"),
+        games = e.optInt("games", e.getInt("wins")),
         lastDate = if (e.isNull("lastDate")) null else e.optString("lastDate"),
         rank = e.getInt("rank"),
     )
